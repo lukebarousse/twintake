@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>TwinTake</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.lukebarousse.twintake</string>
+	<key>CFBundleName</key>
+	<string>TwinTake</string>
+	<key>CFBundleDisplayName</key>
+	<string>TwinTake</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>15.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>TwinTake records your camera (for example a capture card) to camera.mov.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>TwinTake records your microphones into camera.mov and screen.mov.</string>
+	<key>NSCameraReactionEffectGesturesEnabledDefault</key>
+	<false/>
+	<key>RecorderGitSha</key>
+	<string>unknown</string>
+</dict>
+</plist>
