@@ -1,8 +1,11 @@
-<p align="center"><img src="docs/images/logo.svg" alt="TwinTake logo" width="120"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/banner-dark.png">
+    <img src="docs/images/banner-light.png" alt="TwinTake" width="640">
+  </picture>
+</p>
 
-# TwinTake
-
-Record your camera and your screen at the same time, into two separate files, on macOS.
+<p align="center"><strong>Record your camera and your screen at the same time, into two separate files, on macOS.</strong></p>
 
 <p align="center"><img src="docs/images/hero.jpg" alt="TwinTake during a take: the Windows VM snapped into the 16:9 frame, the control bar above it, the floating camera window, and the camera behind the laptop" width="700"></p>
 
