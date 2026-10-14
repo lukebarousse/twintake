@@ -6,9 +6,7 @@
 
 Record your camera and your screen at the same time, into two separate files, on macOS.
 
-<!-- Hero image slot. Add docs/images/hero.png, then remove the comment markers around the next line.
-<p align="center"><img src="docs/images/hero.png" alt="TwinTake: the menu, the control bar and the camera window" width="900"></p>
--->
+<p align="center"><img src="docs/images/hero.jpg" alt="TwinTake during a take: the Windows VM snapped into the 16:9 frame, the control bar above it, the floating camera window, and the camera behind the laptop" width="700"></p>
 
 TwinTake is a native menu-bar app. Each take is one folder with `camera.mov`, `screen.mov` and a few small metadata files. Edit the files in any editor that reads `.mov`: Final Cut Pro, Premiere Pro, DaVinci Resolve, ScreenFlow and others.
 

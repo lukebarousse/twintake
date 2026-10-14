@@ -16,6 +16,8 @@ This page covers the hardware and the macOS settings that TwinTake needs. For th
 
 TwinTake was built and tested on one desk:
 
+<p align="center"><img src="images/desk-side.jpg" alt="The test desk: a Sony a6600 on a stand next to a MacBook Pro, with TwinTake's camera window on the external display" width="640"></p>
+
 ```mermaid
 flowchart LR
     rode["Rode mic"] -->|"3.5 mm jack"| cam["Sony a6600"]
