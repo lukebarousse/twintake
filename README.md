@@ -43,10 +43,12 @@ Status: early development. TwinTake is built for one creator's desk setup. Suppo
 ```bash
 git clone https://github.com/lukebarousse/twintake.git
 cd twintake
+scripts/install.sh              # release build, installed in /Applications and opened
 scripts/build-app.sh            # debug build: build/TwinTake.app
-scripts/build-app.sh release    # release build
 swift test                      # unit tests
 ```
+
+Run `scripts/install.sh` again after you pull changes: it rebuilds, replaces the app in /Applications (it refuses while a take is recording) and keeps your permissions.
 
 Add your Apple ID in Xcode > Settings > Accounts. Then create a free Apple Development certificate (Manage Certificates > + > Apple Development). The build script signs with it, so macOS keeps the permissions between builds. See [Signing](docs/setup.md#signing-for-builders).
 
