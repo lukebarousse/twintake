@@ -75,18 +75,29 @@ enum PermissionState: Sendable, Equatable {
 @Observable
 final class PermissionCenter {
     private(set) var states: [PermissionKind: PermissionState] = [:]
+    /// Reads the states: macOS in the app (`systemStates`), fixed states for the docs screenshots.
+    @ObservationIgnored private let read: @MainActor () -> [PermissionKind: PermissionState]
 
-    init() { refresh() }
+    init(read: @escaping @MainActor () -> [PermissionKind: PermissionState] = PermissionCenter.systemStates) {
+        self.read = read
+        refresh()
+    }
 
     func state(_ kind: PermissionKind) -> PermissionState { states[kind] ?? .notGranted }
 
     func refresh() {
+        let s = read()
+        if s != states { states = s }
+    }
+
+    /// The four states as macOS reports them now. Never prompts.
+    static func systemStates() -> [PermissionKind: PermissionState] {
         var s: [PermissionKind: PermissionState] = [:]
-        s[.camera] = Self.avState(.video)
-        s[.microphone] = Self.avState(.audio)
+        s[.camera] = avState(.video)
+        s[.microphone] = avState(.audio)
         s[.screenRecording] = CGPreflightScreenCaptureAccess() ? .granted : .notGranted
         s[.accessibility] = AXIsProcessTrusted() ? .granted : .notGranted
-        if s != states { states = s }
+        return s
     }
 
     /// Shows the macOS prompt (or, when macOS will not ask again, opens System Settings).

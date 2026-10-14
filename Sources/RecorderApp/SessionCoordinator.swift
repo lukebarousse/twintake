@@ -3231,3 +3231,65 @@ extension MicCheckOutcome {
                   liveSources: result.liveSources)
     }
 }
+
+#if DEBUG
+// MARK: - Sample state (docs screenshots)
+
+extension SessionCoordinator {
+    /// A made-up state for the docs screenshots (`Tests/DocShots`): devices, a take's track lines
+    /// and meters, the preview phase. Plain data only. The app never uses it.
+    struct Sample {
+        var state: State = .idle
+        /// The take's length so far, for the elapsed time.
+        var elapsedS: Double = 0
+        var inventory = DeviceInventory()
+        var displays: [DisplayInfo] = []
+        var trackLines: [TrackStatusLine] = []
+        var markers: [String] = []
+        var preview = PreviewPhase.off
+        var cameraWindowPhase = PreviewPhase.off
+        /// The meters that run: the idle meters while idle, the take's while recording.
+        var meterSources: [AudioSource] = []
+        var meters: AudioLevelsSnapshot?
+        var lastSession: LastSession?
+        var replayShown = false
+        /// The Snap button's title, e.g. "Snap: Safari" (`refreshSnapTarget()` reads the window
+        /// list, which a sample does not have). Nil keeps the title from before the first read.
+        var snapButtonTitle: String?
+    }
+
+    /// Shows `sample` in the views. It only sets the values the views read. It marks the
+    /// coordinator as quitting first, so no camera, mic, preview pass or ticker starts; call it
+    /// on a coordinator that never launched.
+    func showSample(_ sample: Sample) {
+        shuttingDown = true
+        state = sample.state
+        let now = Date()
+        self.now = now
+        startedAt = sample.state.canStart ? nil : now.addingTimeInterval(-sample.elapsedS)
+        inventory = sample.inventory
+        videoDevices = sample.inventory.videoDevices
+        audioDevices = sample.inventory.audioDevices
+        refreshAutomaticPicks()
+        displays = sample.displays
+        issues = []
+        trackLines = sample.trackLines
+        markers = sample.markers
+        preview = sample.preview
+        cameraWindowPhase = sample.cameraWindowPhase
+        if sample.state.canStart {
+            idleMeterSources = sample.meterSources
+            activeMeterSources = []
+        } else {
+            idleMeterSources = []
+            activeMeterSources = sample.meterSources
+        }
+        meters = sample.meters
+        micAlert = nil
+        cameraHealth = CameraHealth()
+        lastSession = sample.lastSession
+        replayShown = sample.replayShown
+        if let title = sample.snapButtonTitle { snapButtonTitle = title }
+    }
+}
+#endif

@@ -99,7 +99,7 @@ Set the camera to 4K 24p, pick the Cam Link audio under Audio, and allow the mic
 
 ## Start and timing
 
-camera.mov is written on an exact 24000/1001 grid that follows real time, and both files start at one scheduled time (half a second after the click).
+camera.mov is written on an exact 24000/1001 grid that follows real time, and both files start at one scheduled time (half a second after both recorders are ready).
 
 1. **Frames start within one frame of each other:** in session.json, the camera_video and screen_video `first_pts_host_ns` differ by less than 41.7 ms (one 23.976 frame). In events.jsonl, `track_start` of camera_video has `start_lag_ms` under 41.7 and `warmup_ms` under 100; screen_video has `start_lag_ms` under 20.9. Both have the same `scheduled_start_host_ns`, equal to session.json `started_at_host_ns`. There is no warning "got ready … after the scheduled start".
 2. **camera.mov grid:** `ffprobe -v error -select_streams v:0 -show_entries stream=time_base,r_frame_rate,avg_frame_rate camera.mov` gives `time_base=1/24000` and `24000/1001`. `ffprobe -v error -select_streams v:0 -show_entries packet=duration -of csv=p=0 camera.mov | sort | uniq -c` lists only `1001`.

@@ -9,7 +9,7 @@ Every recording is one folder. Editing tools read it; they never change the raw 
 ├── session.json    what was recorded, with which devices and formats
 ├── events.jsonl    timeline of events (markers, snaps, errors, replays), one JSON object per line
 ├── voice.jsonl     when the speaker talks (1.4), written at Stop when a mic was recorded
-└── derived/        reserved for tools (transcripts, FCPXML). The recorder never writes here.
+└── derived/        not created by the recorder; reserved for tools (transcripts, FCPXML)
 ```
 
 ## Files

@@ -872,8 +872,8 @@ final class ReplayControlsView: NSView {
         let transport: [(view: NSView, width: CGFloat)] = [(back, 30), (play, 34), (forward, 30)]
         let rates = speeds.map { (view: $0.button as NSView, width: $0.button.contentWidth(padding: 7)) }
         let end = place([transport, rates, [(live, live.contentWidth(padding: 8))]], row: 0)
-        let timeWidth = ceil(time.intrinsicContentSize.width) + 2
-        let statusWidth = max(0, min(ceil(status.intrinsicContentSize.width) + 2, grid.right - timeWidth - gap - (end + gap)))
+        let timeWidth = ceil(time.fittingSize.width) + 2
+        let statusWidth = max(0, min(ceil(status.fittingSize.width) + 2, grid.right - timeWidth - gap - (end + gap)))
         status.frame = grid.label(x: grid.right - statusWidth, width: statusWidth, row: 0)
         time.frame = grid.label(x: grid.right - statusWidth - (statusWidth > 0 ? gap : 0) - timeWidth, width: timeWidth, row: 0)
         // Row 1: Skip silence, Flags only, the flag arrows and the count; Sound on the right.
@@ -882,11 +882,11 @@ final class ReplayControlsView: NSView {
         let arrows = place([modes, [(previousFlag, 28), (nextFlag, 28)]], row: 1)
         let soundFrame = grid.fromRight([sound.contentWidth(padding: 8)], row: 1).frames[0]
         sound.frame = soundFrame
-        let countWidth = max(0, min(ceil(flagCount.intrinsicContentSize.width) + 2, soundFrame.minX - gap - (arrows + gap)))
+        let countWidth = max(0, min(ceil(flagCount.fittingSize.width) + 2, soundFrame.minX - gap - (arrows + gap)))
         flagCount.frame = grid.label(x: arrows + gap, width: countWidth, row: 1)
         // "Use headphones" between the count and Sound, cut short ("Use head…") in a narrow window.
         let hintRoom = soundFrame.minX - gap - (flagCount.frame.maxX + gap)
-        let hintWidth = max(0, min(ceil(headphones.intrinsicContentSize.width) + 2, hintRoom))
+        let hintWidth = max(0, min(ceil(headphones.fittingSize.width) + 2, hintRoom))
         headphones.frame = grid.label(x: soundFrame.minX - gap - hintWidth, width: hintWidth, row: 1)
     }
 

@@ -34,5 +34,12 @@ let package = Package(
         .testTarget(name: "WindowToolsTests", dependencies: ["WindowTools"]),
         .testTarget(name: "ReplayTests", dependencies: ["Replay", "RecorderCore", "MediaWriter"]),
         .testTarget(name: "RecorderAppTests", dependencies: ["RecorderApp", "RecorderCore", "ScreenCapture", "WindowTools", "Replay"]),
+        // Dev only, never in TwinTake.app: renders the app's own views with sample data to
+        // docs/images (scripts/render-docs-images.sh). A test target, because only a test target
+        // can import the app's executable target. Skipped unless TWINTAKE_DOCSHOTS_DIR is set.
+        .testTarget(
+            name: "DocShots",
+            dependencies: ["RecorderApp", "RecorderCore", "CameraCapture", "WindowTools", "Replay"]
+        ),
     ]
 )
