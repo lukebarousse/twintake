@@ -24,6 +24,7 @@ cp "$BIN" "$APP/Contents/MacOS/$APP_NAME"
 cp "$ROOT/App/Info.plist" "$APP/Contents/Info.plist"
 # The MIT licenses of this app and of the code it adapts travel with every copy.
 cp "$ROOT/LICENSE" "$ROOT/NOTICE.md" "$APP/Contents/Resources/"
+cp "$ROOT/App/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 GIT_SHA="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 /usr/libexec/PlistBuddy -c "Set :RecorderGitSha $GIT_SHA" "$APP/Contents/Info.plist"

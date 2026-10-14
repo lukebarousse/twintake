@@ -1,6 +1,4 @@
-<!-- Logo slot. Add docs/images/logo.svg, then remove the comment markers around the next line.
 <p align="center"><img src="docs/images/logo.svg" alt="TwinTake logo" width="120"></p>
--->
 
 # TwinTake
 

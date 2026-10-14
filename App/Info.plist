@@ -4,13 +4,15 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>TwinTake</string>
 	<key>CFBundleExecutable</key>
 	<string>TwinTake</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.lukebarousse.twintake</string>
 	<key>CFBundleName</key>
-	<string>TwinTake</string>
-	<key>CFBundleDisplayName</key>
 	<string>TwinTake</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
@@ -22,14 +24,14 @@
 	<string>15.0</string>
 	<key>LSUIElement</key>
 	<true/>
-	<key>NSHighResolutionCapable</key>
-	<true/>
-	<key>NSCameraUsageDescription</key>
-	<string>TwinTake records your camera (for example a capture card) to camera.mov.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>TwinTake records your microphones into camera.mov and screen.mov.</string>
 	<key>NSCameraReactionEffectGesturesEnabledDefault</key>
 	<false/>
+	<key>NSCameraUsageDescription</key>
+	<string>TwinTake records your camera (for example a capture card) to camera.mov.</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>TwinTake records your microphones into camera.mov and screen.mov.</string>
 	<key>RecorderGitSha</key>
 	<string>unknown</string>
 </dict>
