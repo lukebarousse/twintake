@@ -147,12 +147,19 @@ enum MicStatusText {
         return (rounded < 0 ? "−" : "+") + number + " dB"
     }
 
+    /// Under "Rode confirmed" while recording.
+    static let confirmedDetail = "The mic check is off for the rest of this take."
+
     /// The live line under the meters while a take or a check runs. Pauses do not change it:
     /// the detector counts voiced time only.
     /// - Parameter macMicMissing: the calibration tells the mics apart by their level against the
     ///   Mac mic only (`MicCalibrationText.needsMacMic`), and this take or check has no Mac mic.
     static func live(_ status: MicDetectorStatus, macMicMissing: Bool = false) -> MicText {
         let corr = status.correlation.map { " · L/R \(correlation($0))" } ?? ""
+        // A take confirmed the external mic: no rule warns for the rest of it.
+        if status.confirmed {
+            return MicText(title: "\(MicNames.external) confirmed\(corr)", detail: confirmedDetail, tone: .good)
+        }
         if status.cameraMicSilent {
             return MicText(title: "The camera mic isn't picking up your voice", tone: .warning)
         }

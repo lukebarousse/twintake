@@ -59,6 +59,19 @@ enum ReplayRules {
         }
     }
 
+    /// The status while a mic check runs with Sound on: the replay plays without its sound.
+    static let micCheckMuted = "Muted while the mic check runs."
+
+    /// The replay's sound can come out of the speakers, which both mics hear, so the camera mic
+    /// detector takes no evidence (`AudioLevelMonitor.setEvidencePaused`): Sound on and Play on,
+    /// also while it waits at the live edge or for more speech (it may play any moment). Paused,
+    /// ended, hidden or closed, nothing comes out: a saved take opened again after Stop with Sound
+    /// on, but paused, must not stop the check before the next take. During a mic check the
+    /// replay plays muted, so the check hears only the speaker.
+    static func pausesMicEvidence(engineOpen: Bool, soundOn: Bool, playing: Bool, micCheckRuns: Bool) -> Bool {
+        engineOpen && soundOn && playing && !micCheckRuns
+    }
+
     /// The window's title.
     static func title(folder: URL, live: Bool) -> String {
         live ? "Replay · \(folder.lastPathComponent) · recording" : "Replay · \(folder.lastPathComponent)"

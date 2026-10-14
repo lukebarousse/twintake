@@ -707,7 +707,7 @@ public final class CameraRecorder: SessionTrackRecorder, @unchecked Sendable {
             events.append(.warning, ["source": "camera", "message": warning])
         }
         logUSBLink(facts.snapshot, to: events)
-        levels?.beginTake(events: events)
+        levels?.beginTake(events: events, startHostNs: startHostNs)
 
         controller.configure(syncClock: facts.clock)
         // The encoder settings of the moment (`useEncoder`): a preview camera opened before a codec

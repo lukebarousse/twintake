@@ -4,8 +4,12 @@ import CoreGraphics
 /// `CameraWindowGeometry`, but the window is not locked to 16:9 (its controls sit under the
 /// picture). All rects are in AppKit coordinates (y up).
 public enum ReplayWindowGeometry {
-    /// A 16:9 picture 960 wide with the controls under it.
-    public static let defaultSize = CGSize(width: 960, height: 640)
+    /// The replay panel's title bar (a HUD utility panel: `NSPanel.contentRect(forFrameRect:styleMask:)`
+    /// takes 19 pt off the frame).
+    public static let titleBarHeight: CGFloat = 19
+    /// The frame for a 16:9 picture 960 wide (960x540, no bars) with the controls under it and the
+    /// title bar on top: 960x667.
+    public static let defaultSize = CGSize(width: 960, height: 540 + ReplayControlsLayout.height + titleBarHeight)
     public static let minSize = CGSize(width: 480, height: 360)
     /// Gap between the window and the edge of the visible frame for the default place.
     public static let margin: CGFloat = 24
@@ -65,5 +69,95 @@ public enum ReplayWindowGeometry {
         let width = (area.width * share).rounded()
         let height = (width * 9 / 16).rounded()
         return CGRect(x: area.maxX - inset - width, y: area.minY + inset, width: width, height: height)
+    }
+}
+
+extension ReplayWindowGeometry {
+    /// The close button's inset from the window's left edge: the controls' side inset, so the X
+    /// does not sit in the window's rounded corner.
+    public static let closeButtonInset: CGFloat = ReplayControlsLayout.inset
+
+    /// Where the title bar's close button goes (in the title bar's coordinates): `closeButtonInset`
+    /// from the left edge, centered in the title bar's height.
+    public static func closeButtonOrigin(button: CGSize, titleBar: CGSize) -> CGPoint {
+        CGPoint(x: closeButtonInset, y: max(0, ((titleBar.height - button.height) / 2).rounded(.down)))
+    }
+}
+
+/// Where the replay window's controls go, under the picture: the timeline, then two rows of
+/// buttons. Plain geometry (AppKit coordinates, y up), so the spacing can be tested. Everything
+/// keeps `inset` from the controls' left, right and bottom edges and from the picture above;
+/// buttons sit `gap` apart, groups of buttons (transport, speeds, Live) `groupGap` apart.
+public struct ReplayControlsLayout: Equatable, Sendable {
+    public static let inset: CGFloat = 12
+    public static let gap: CGFloat = 8
+    public static let groupGap: CGFloat = 16
+    public static let rowHeight: CGFloat = 24
+    public static let timelineHeight: CGFloat = 20
+    /// Text labels (the time, the status) are this tall, centered in their row.
+    public static let labelHeight: CGFloat = 16
+    /// The controls' height: the timeline and two rows, with their gaps and insets.
+    public static let height: CGFloat = inset + timelineHeight + gap + rowHeight + gap + rowHeight + inset
+
+    public var size: CGSize
+
+    public init(size: CGSize) { self.size = size }
+
+    /// The timeline across the top, `inset` from the picture and the sides.
+    public var timeline: CGRect {
+        CGRect(x: Self.inset, y: size.height - Self.inset - Self.timelineHeight,
+               width: max(0, size.width - 2 * Self.inset), height: Self.timelineHeight)
+    }
+
+    /// The bottom edge of row 0 (under the timeline) or row 1 (the bottom row, `inset` above the edge).
+    public func rowY(_ row: Int) -> CGFloat {
+        timeline.minY - Self.gap - Self.rowHeight - CGFloat(row) * (Self.rowHeight + Self.gap)
+    }
+
+    /// The right edge the controls may reach.
+    public var right: CGFloat { size.width - Self.inset }
+
+    /// Frames for `groups` of widths placed from the left inset in `row`: `gap` apart inside a
+    /// group, `groupGap` between groups. `end` is the right edge of the last one (the inset when
+    /// there is none).
+    public func fromLeft(_ groups: [[CGFloat]], row: Int) -> (frames: [[CGRect]], end: CGFloat) {
+        var x = Self.inset
+        var end = Self.inset
+        var frames: [[CGRect]] = []
+        for group in groups {
+            guard !group.isEmpty else {
+                frames.append([])
+                continue
+            }
+            if end > Self.inset { x = end + Self.groupGap }
+            var placed: [CGRect] = []
+            for (i, width) in group.enumerated() {
+                if i > 0 { x += Self.gap }
+                placed.append(CGRect(x: x, y: rowY(row), width: width, height: Self.rowHeight))
+                x += width
+            }
+            end = x
+            frames.append(placed)
+        }
+        return (frames, end)
+    }
+
+    /// Frames for `widths` placed from the right inset leftward in `row`, `gap` apart: the first
+    /// width is the rightmost. `start` is the left edge of the last one (`right` when there is none).
+    public func fromRight(_ widths: [CGFloat], row: Int) -> (frames: [CGRect], start: CGFloat) {
+        var x = right
+        var frames: [CGRect] = []
+        for (i, width) in widths.enumerated() {
+            if i > 0 { x -= Self.gap }
+            x -= width
+            frames.append(CGRect(x: x, y: rowY(row), width: width, height: Self.rowHeight))
+        }
+        return (frames, x)
+    }
+
+    /// A text label's frame in `row` at `x`, centered in the row's height.
+    public func label(x: CGFloat, width: CGFloat, row: Int) -> CGRect {
+        CGRect(x: x, y: rowY(row) + ((Self.rowHeight - Self.labelHeight) / 2).rounded(.down), width: max(0, width),
+               height: Self.labelHeight)
     }
 }

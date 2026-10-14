@@ -118,6 +118,11 @@ public struct AudioLevelsSnapshot: Sendable, Equatable {
 /// while idle. When the camera mic comes back after `idleRestartAfterNs` without a block (the
 /// camera closed and opened again), the idle detector starts over, so an old verdict never
 /// speaks for a mic that may have changed meanwhile. Takes and mic checks never start over that way.
+///
+/// A take checks the camera mic only until the external mic is confirmed
+/// (`MicDetectorSettings.take`): then it logs one `mic_confirmed`, and no rule warns for the rest
+/// of the take. Before recording the rules never stop. While the replay's sound plays
+/// (`setEvidencePaused(_:)`), both mics hear the speakers: nothing counts as evidence then.
 public final class AudioLevelMonitor: Sendable {
     /// A meter that sent no block for this long reads -120 dBFS and `isLive` false.
     public static let staleAfterNs: UInt64 = 500_000_000
@@ -125,6 +130,9 @@ public final class AudioLevelMonitor: Sendable {
     public static let idleRestartAfterNs: UInt64 = 2_000_000_000
     /// The peak hold: 1.5 s, in blocks.
     static let holdBlocks = 30
+    /// After the replay's sound stops, this many more blocks (0.5 s) are no evidence: blocks still
+    /// on their way from the mics, and the room's tail of the speakers' sound.
+    public static let evidenceResumeBlocks = 10
 
     /// What the detector's evidence is for.
     private enum Phase { case idle, take, check }
@@ -144,6 +152,12 @@ public final class AudioLevelMonitor: Sendable {
         var lastCameraNs: UInt64?
         /// The voice timeline of the take (the replay's Skip silence): fed while a take records.
         var voice = VoiceTimelineBuilder()
+        /// The take's start (session.json `started_at_host_ns`), for take times; nil when unknown.
+        var takeStartNs: UInt64?
+        /// The replay's sound plays: the detector takes no evidence.
+        var evidencePaused = false
+        /// Blocks still to go after the pause ended before evidence counts again.
+        var evidenceResumeLeft = 0
     }
 
     private let state: Mutex<State>
@@ -159,7 +173,7 @@ public final class AudioLevelMonitor: Sendable {
 
     /// Takes one block of `source`. Called by the meters on their capture queues; never blocks.
     public func publish(_ block: AudioBlock, from source: AudioSource, receivedNs: UInt64 = HostClock.nowNs()) {
-        let (changes, events) = state.withLock { s -> ([MicDetectorChange], EventLog?) in
+        let (changes, events, startNs) = state.withLock { s -> ([MicDetectorChange], EventLog?, UInt64?) in
             if source == .cameraMic {
                 if s.phase == .idle, let last = s.lastCameraNs, receivedNs > last, receivedNs - last > Self.idleRestartAfterNs {
                     s.pairer = BlockPairer()
@@ -172,17 +186,46 @@ public final class AudioLevelMonitor: Sendable {
             case .screenMic: s.screenMic.add(block, receivedNs: receivedNs)
             case .systemAudio: s.system.add(block, receivedNs: receivedNs)
             }
-            guard source != .systemAudio else { return ([], nil) }
+            guard source != .systemAudio else { return ([], nil, nil) }
             if s.phase == .take { s.voice.add(block, from: source) }
             s.pairer.insert(block, isCamera: source == .cameraMic)
             var changes: [MicDetectorChange] = []
             while let pair = s.pairer.popReady() {
-                if let change = s.detector.add(camera: pair.camera, reference: pair.reference) { changes.append(change) }
+                var collect = !s.evidencePaused
+                if collect, s.evidenceResumeLeft > 0 {
+                    s.evidenceResumeLeft -= 1
+                    collect = false
+                }
+                if let change = s.detector.add(camera: pair.camera, reference: pair.reference, evidence: collect) {
+                    changes.append(change)
+                }
             }
-            return (changes, changes.isEmpty ? nil : s.events)
+            return (changes, changes.isEmpty ? nil : s.events, s.takeStartNs)
         }
         guard let events else { return }
-        for change in changes { events.append(.micDetector, change.eventData) }
+        for change in changes {
+            if change.verdictOrWarningChanged { events.append(.micDetector, change.eventData) }
+            if change.confirmedNow {
+                let elapsed = change.blockIndex.flatMap { Self.takeTime(blockIndex: $0, startNs: startNs) }
+                events.append(.micConfirmed, change.confirmationData(elapsedS: elapsed))
+            }
+        }
+    }
+
+    /// Take time (seconds since `startNs`) at the end of block `blockIndex`; nil without a start.
+    static func takeTime(blockIndex: Int64, startNs: UInt64?) -> Double? {
+        guard let startNs, blockIndex >= 0 else { return nil }
+        let endNs = UInt64(blockIndex + 1) * AudioBlock.durationNs
+        return endNs > startNs ? Double(endNs - startNs) / 1e9 : 0
+    }
+
+    /// The detector's report, with the take time of the confirmation.
+    private static func report(_ s: State) -> MicSourceReport? {
+        guard var report = s.detector.report() else { return nil }
+        if let index = s.detector.confirmedAtIndex, let at = takeTime(blockIndex: index, startNs: s.takeStartNs) {
+            report.confirmedAtS = CameraMicDetector.round(at, 1)
+        }
+        return report
     }
 
     // MARK: UI (any thread)
@@ -218,6 +261,21 @@ public final class AudioLevelMonitor: Sendable {
         }
     }
 
+    /// Pauses (or resumes) the detector's evidence: true while the replay's sound plays, which both
+    /// mics may hear from the speakers. The meters and the voice timeline go on. After a pause,
+    /// evidence counts again `evidenceResumeBlocks` blocks later. Calling it again with the same
+    /// value changes nothing.
+    public func setEvidencePaused(_ paused: Bool) {
+        state.withLock { s in
+            if s.evidencePaused, !paused { s.evidenceResumeLeft = Self.evidenceResumeBlocks }
+            s.evidencePaused = paused
+        }
+    }
+
+    /// True while the detector takes no evidence (`setEvidencePaused(_:)`), also in the blocks
+    /// right after the pause.
+    public var evidencePaused: Bool { state.withLock { $0.evidencePaused || $0.evidenceResumeLeft > 0 } }
+
     /// Sets every clip counter back to 0.
     public func resetClipCounts() {
         state.withLock { s in
@@ -240,26 +298,32 @@ public final class AudioLevelMonitor: Sendable {
             s.takeParticipants = 0
             s.lastCameraNs = nil
             s.voice = VoiceTimelineBuilder()
+            s.takeStartNs = nil
         }
     }
 
     // MARK: Takes (recorders)
 
-    /// A take starts: the detector starts over with the standard settings, the clip counters go
-    /// to 0, and detector changes go to `events` (`mic_detector`). Called by both recorders at
-    /// Start; the second call with the same log only counts the second recorder in.
-    public func beginTake(events: EventLog) {
+    /// A take starts: the detector starts over with the take settings (it checks until the
+    /// external mic is confirmed), the clip counters go to 0, and detector changes go to `events`
+    /// (`mic_detector`, `mic_confirmed`). Called by both recorders at Start; the second call with
+    /// the same log only counts the second recorder in.
+    /// - Parameter startHostNs: the scheduled start (session.json `started_at_host_ns`), for the
+    ///   take time of the confirmation.
+    public func beginTake(events: EventLog, startHostNs: UInt64? = nil) {
         state.withLock { s in
             guard s.events !== events || s.phase != .take else {
                 s.takeParticipants += 1
+                if s.takeStartNs == nil { s.takeStartNs = startHostNs }
                 return
             }
             s.events = events
             s.phase = .take
             s.takeParticipants = 1
+            s.takeStartNs = startHostNs
             s.voice = VoiceTimelineBuilder()
             s.pairer = BlockPairer()
-            s.detector = CameraMicDetector(settings: .standard, calibration: s.calibration)
+            s.detector = CameraMicDetector(settings: .take, calibration: s.calibration)
             s.camera.clipCount = 0
             s.screenMic.clipCount = 0
             s.system.clipCount = 0
@@ -273,11 +337,12 @@ public final class AudioLevelMonitor: Sendable {
     @discardableResult
     public func endTake(events: EventLog) -> MicSourceReport? {
         state.withLock { s in
+            let report = Self.report(s)
             if s.events === events, s.phase == .take {
                 s.takeParticipants -= 1
                 if s.takeParticipants <= 0 { Self.endTake(&s) }
             }
-            return s.detector.report()
+            return report
         }
     }
 
@@ -289,17 +354,20 @@ public final class AudioLevelMonitor: Sendable {
         }
     }
 
+    /// Back to idle: the detector keeps what the take heard, and its rules run again (a take that
+    /// confirmed the external mic stopped them; before recording they never stop).
     private static func endTake(_ s: inout State) {
         s.events = nil
         s.phase = .idle
         s.takeParticipants = 0
+        s.detector.resumeChecks()
     }
 
     /// True while a take collects the voice timeline and logs the detector.
     public var takeRuns: Bool { state.withLock { $0.phase == .take } }
 
     /// The detector's report for the evidence since the take (or the check) began.
-    public func takeReport() -> MicSourceReport? { state.withLock { $0.detector.report() } }
+    public func takeReport() -> MicSourceReport? { state.withLock { Self.report($0) } }
 
     // MARK: Mic check (MicCheck)
 
@@ -312,6 +380,7 @@ public final class AudioLevelMonitor: Sendable {
             s.events = nil
             s.phase = .check
             s.takeParticipants = 0
+            s.takeStartNs = nil
             s.pairer = BlockPairer()
             s.detector = CameraMicDetector(settings: .micCheck, calibration: s.calibration)
             s.camera.clipCount = 0

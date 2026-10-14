@@ -156,7 +156,7 @@ public final class ScreenRecorder: SessionTrackRecorder, @unchecked Sendable {
 
             let timing = SessionTiming(frameRate: config.frameRate,
                                        startNs: ScheduledStart.startNs(scheduledNs: startHostNs, nowNs: HostClock.nowNs()))
-            levels?.beginTake(events: events)
+            levels?.beginTake(events: events, startHostNs: startHostNs)
             let roles = ScreenTrackLayout.roles(mic: handles.mic != nil, systemAudio: handles.systemAudio != nil)
             // Audio first: it only holds samples until the video fixes t0.
             if let pipeline = streams.mic, let input = handles.mic, let channels = micChannels {

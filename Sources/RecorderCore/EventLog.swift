@@ -21,6 +21,9 @@ public struct SessionEvent: Codable, Sendable, Equatable {
         /// The camera mic detector changed its verdict (`external_mic`, `built_in_mic`, `unknown`)
         /// or its "camera mic isn't picking up your voice" warning. See `MicDetectorChange`.
         case micDetector = "mic_detector"
+        /// The camera mic detector confirmed the external mic in the take (1.5): the mic rules
+        /// stop for the rest of it. Once per take at most. See `MicDetectorChange.confirmationData`.
+        case micConfirmed = "mic_confirmed"
         /// The camera's USB link at Start: speed, USB generation, vendor and product id.
         case usbLink = "usb_link"
         /// The camera sent empty frames (all-zero planes or one flat value), or a picture again:

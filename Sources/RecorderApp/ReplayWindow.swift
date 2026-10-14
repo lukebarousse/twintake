@@ -19,7 +19,9 @@ struct ReplaySource: Equatable {
 ///   silence, Flags only with the next and previous flag, and Sound.
 /// - Muted by default: the speakers would be in the Rode and the MacBook mic. Sound on shows
 ///   "Use headphones". During a take, `replay_start`, `replay_end` and `replay_sound` go to
-///   events.jsonl, so the editor cuts the stretch spent in the replay.
+///   events.jsonl, so the editor cuts the stretch spent in the replay. While it plays with Sound
+///   on, the camera mic detector takes no evidence (`ReplayRules.pausesMicEvidence`). During a mic
+///   check it plays muted (Sound stays on for after the check).
 /// - It only reads the files (`ReplayEngine`): no writer, capture or session change. At Stop it
 ///   lets go of the files while they are finished, and opens the saved take again after Saving.
 /// - A non-activating panel that never becomes key: opening it or clicking it never takes the
@@ -54,6 +56,10 @@ final class ReplayController: NSObject, NSWindowDelegate {
     private var scrub: (wasPlaying: Bool, lastSeekNs: UInt64)?
     /// Host time the replay of a live take opened: its `dropped_frames` events count from here.
     private var openedAtNs: UInt64 = 0
+    /// A mic check runs: the replay plays without its sound (`micCheckChanged(running:)`).
+    private var micCheckRuns = false
+    /// What this window last told the camera mic detector (`updateEvidencePause`).
+    private var evidencePaused = false
 
     private struct Stretch {
         var openedAtS: Double
@@ -121,6 +127,7 @@ final class ReplayController: NSObject, NSWindowDelegate {
             poll = nil
             engine?.close()
             engine = nil
+            updateEvidencePause()
             saving = true
             model?.saving = true
             model?.snapshot.playing = false
@@ -145,6 +152,7 @@ final class ReplayController: NSObject, NSWindowDelegate {
                                 skipSilence: previous?.skipSilence ?? settings.replaySkipSilence)
         model.flagsOnly = previous?.flagsOnly ?? false
         model.soundOn = previous?.soundOn ?? false
+        model.micCheckMutes = micCheckRuns
         self.model = model
         self.source = source
         panel?.title = model.title
@@ -193,11 +201,38 @@ final class ReplayController: NSObject, NSWindowDelegate {
         self.engine = engine
         engine.setSpeed(model.speed)
         engine.setPlan(plan(model))
-        if model.soundOn { engine.setSound(true) }
+        if model.soundOn, !micCheckRuns { engine.setSound(true) }
         engine.start(at: position, play: play)
         if let panel { engine.setVisible(panel.occlusionState.contains(.visible) || !panel.isVisible) }
         model.flags = info.flags
+        updateEvidencePause(playing: play)
         startPolling()
+    }
+
+    /// The replay's sound from the speakers reaches the Rode and the MacBook mic: while it plays
+    /// with Sound on, the camera mic detector takes no evidence (before recording and in a take).
+    /// Called on each poll, so a pause, the end of the take or a hidden window lets the check
+    /// go on.
+    /// - Parameter playing: Play as just asked or read; nil reads the engine's snapshot.
+    private func updateEvidencePause(playing: Bool? = nil) {
+        let paused = ReplayRules.pausesMicEvidence(engineOpen: engine != nil, soundOn: model?.soundOn == true,
+                                                   playing: playing ?? (engine?.snapshot.playing == true),
+                                                   micCheckRuns: micCheckRuns)
+        guard paused != evidencePaused else { return }
+        evidencePaused = paused
+        coordinator?.levels.setEvidencePaused(paused)
+    }
+
+    /// A mic check started or ended (idle only: a check never runs during a take). While it runs,
+    /// the replay plays without its sound, so the check (and a calibration sample) hears only the
+    /// speaker, not the speakers; Sound stays on and comes back after it.
+    func micCheckChanged(running: Bool) {
+        guard micCheckRuns != running else { return }
+        micCheckRuns = running
+        model?.micCheckMutes = running
+        if let model { engine?.setSound(model.soundOn && !running) }
+        updateEvidencePause()
+        render()
     }
 
     private func tearDown(reason: ReplayEvents.EndReason) {
@@ -216,6 +251,7 @@ final class ReplayController: NSObject, NSWindowDelegate {
         saving = false
         positionBeforeSave = nil
         scrub = nil
+        updateEvidencePause()
     }
 
     // MARK: - Updates
@@ -236,10 +272,12 @@ final class ReplayController: NSObject, NSWindowDelegate {
 
     private func refresh(readTake: Bool) {
         guard let model, let engine else { return }
-        var snapshot = engine.snapshot
+        let played = engine.snapshot
+        var snapshot = played
         // While the timeline is dragged the engine pauses; the button keeps what it was.
         if let scrub { snapshot.playing = scrub.wasPlaying }
         if model.snapshot != snapshot { model.snapshot = snapshot }
+        updateEvidencePause(playing: played.playing)
         render()
         guard readTake, let source, source.live, let tail else { return }
         Task { [weak self] in
@@ -288,7 +326,10 @@ final class ReplayController: NSObject, NSWindowDelegate {
     func togglePlay() {
         guard let engine, !saving else { return }
         model?.notice = nil
+        let wasPlaying = engine.snapshot.playing
         engine.togglePlay()
+        // Playing from here: no evidence from now (the poll would see it up to 0.1 s later).
+        if !wasPlaying { updateEvidencePause(playing: true) }
     }
 
     func skip(_ seconds: Double) {
@@ -336,7 +377,8 @@ final class ReplayController: NSObject, NSWindowDelegate {
     func setSound(_ on: Bool) {
         guard let model, model.soundOn != on else { return }
         model.soundOn = on
-        engine?.setSound(on)
+        engine?.setSound(on && !micCheckRuns)
+        updateEvidencePause()
         render()
         guard source?.live == true, !saving, let elapsed = coordinator?.takeElapsedS else { return }
         coordinator?.logReplay(.replaySound, ReplayEvents.soundData(on: on, elapsedS: elapsed))
@@ -401,9 +443,9 @@ final class ReplayController: NSObject, NSWindowDelegate {
     // MARK: - Panel
 
     private func makePanel() -> ReplayPanel {
-        let size = ReplayWindowGeometry.defaultSize
-        let panel = ReplayPanel(contentRect: NSRect(origin: .zero, size: size),
-                                styleMask: [.titled, .closable, .resizable, .utilityWindow, .hudWindow, .nonactivatingPanel],
+        let size = NSPanel.contentRect(forFrameRect: NSRect(origin: .zero, size: ReplayWindowGeometry.defaultSize),
+                                       styleMask: ReplayPanel.style).size
+        let panel = ReplayPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: ReplayPanel.style,
                                 backing: .buffered, defer: false)
         // The camera window's level: above the dim around the frame, under other apps' menus.
         panel.level = FrameOverlay.aboveOverlayLevel
@@ -420,6 +462,7 @@ final class ReplayController: NSObject, NSWindowDelegate {
         panel.appearance = NSAppearance(named: .darkAqua)
         panel.title = "Replay"
         panel.delegate = self
+        panel.insetCloseButton()
         let container = ReplayContentView(frame: NSRect(origin: .zero, size: size))
         container.autoresizingMask = [.width, .height]
         panel.contentView = container
@@ -497,6 +540,8 @@ final class ReplayModel {
     var saving = false
     /// Why the replay paused by itself (a recorder dropped frames), until the next play or seek.
     var notice: String?
+    /// A mic check runs: the replay plays without its sound (`ReplayController.micCheckChanged`).
+    var micCheckMutes = false
     /// The timeline's position while it is dragged.
     var scrubPosition: Double?
 
@@ -511,7 +556,8 @@ final class ReplayModel {
 
     var status: String? {
         ReplayRules.status(snapshot, live: live && !saving, saving: saving, flagsOnly: flagsOnly, flagCount: flags.count,
-                           skipSilence: skipSilence, hasVoice: hasVoice, notice: snapshot.playing ? nil : notice)
+                           skipSilence: skipSilence, hasVoice: hasVoice,
+                           notice: micCheckMutes && soundOn ? ReplayRules.micCheckMuted : snapshot.playing ? nil : notice)
     }
 
     var timeText: String { "\(ReplayClock.string(position)) / \(ReplayClock.string(snapshot.edge.timelineEndS))" }
@@ -520,10 +566,41 @@ final class ReplayModel {
 // MARK: - Window
 
 /// The replay window. It never becomes key or main, so it never takes the keyboard or makes
-/// TwinTake active; its buttons take the first click.
+/// TwinTake active; its buttons take the first click. Its close button sits 12 pt in from the
+/// left edge (`ReplayWindowGeometry.closeButtonOrigin`), not in the window's rounded corner.
 final class ReplayPanel: NSPanel {
+    /// A small HUD title bar with only the close button; resizable; never activates TwinTake.
+    static let style: NSWindow.StyleMask = [.titled, .closable, .resizable, .utilityWindow, .hudWindow, .nonactivatingPanel]
+
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
+    /// The close button in its place: a copy of the title bar's own (same look), since AppKit puts
+    /// the original back in the corner each time it lays out the title bar (a resize, a new title).
+    private var insetClose: NSButton?
+
+    /// Hides the title bar's close button and shows the same button 12 pt in from the left edge.
+    func insetCloseButton() {
+        guard insetClose == nil, let original = standardWindowButton(.closeButton), let bar = original.superview,
+              let button = NSWindow.standardWindowButton(.closeButton, for: styleMask) else { return }
+        original.isHidden = true
+        button.setFrameOrigin(ReplayWindowGeometry.closeButtonOrigin(button: button.frame.size, titleBar: bar.bounds.size))
+        // Keeps its distance from the left and the top edge when the window resizes.
+        button.autoresizingMask = [.maxXMargin, .minYMargin]
+        button.target = self
+        button.action = #selector(closeClicked(_:))
+        button.toolTip = "Close the replay. The recording goes on."
+        button.setAccessibilityRole(.button)
+        button.setAccessibilitySubrole(.closeButton)
+        button.setAccessibilityLabel("Close")
+        bar.addSubview(button)
+        insetClose = button
+    }
+
+    /// Like the title bar's own button: the delegate decides (the replay closes, the panel stays).
+    @objc private func closeClicked(_ sender: Any?) {
+        if delegate?.windowShouldClose?(self) ?? true { close() }
+    }
 }
 
 /// The picture on top, the controls under it.
@@ -666,7 +743,8 @@ extension ReplayModel {
 /// The timeline and the buttons under the picture, in AppKit like the control bar: every button
 /// is a `BarButton`, which takes the first click in this panel that never becomes key.
 final class ReplayControlsView: NSView {
-    static let height: CGFloat = 86
+    /// The timeline and two rows of buttons, 12 pt in from every edge (`ReplayControlsLayout`).
+    static let height: CGFloat = ReplayControlsLayout.height
 
     private weak var controller: ReplayController?
     let timeline = ReplayTimelineView()
@@ -686,7 +764,8 @@ final class ReplayControlsView: NSView {
     private let sound = BarButton()
     private var state = ReplayControlsState()
 
-    init(controller: ReplayController) {
+    /// - Parameter controller: nil in tests (the buttons then do nothing).
+    init(controller: ReplayController?) {
         self.controller = controller
         speeds = RecorderSettings.replaySpeeds.map { ($0, BarButton()) }
         super.init(frame: CGRect(x: 0, y: 0, width: 600, height: Self.height))
@@ -773,42 +852,42 @@ final class ReplayControlsView: NSView {
         needsLayout = true
     }
 
+    /// Every button keeps 12 pt from the window's edges and 8 pt from the next button
+    /// (`ReplayControlsLayout`); groups of buttons sit 16 pt apart.
     override func layout() {
         super.layout()
-        let inset: CGFloat = 10, rowHeight: CGFloat = 24
-        timeline.frame = CGRect(x: inset, y: bounds.height - 8 - 20, width: max(0, bounds.width - 2 * inset), height: 20)
-        // Row 1: transport, speed, Live; the time and the status on the right.
-        var x = inset
-        var y = bounds.height - 8 - 20 - 6 - rowHeight
-        func place(_ view: NSView, width: CGFloat, gap: CGFloat = 4) {
-            guard !view.isHidden else { return }
-            view.frame = CGRect(x: x, y: y, width: width, height: rowHeight)
-            x += width + gap
+        let grid = ReplayControlsLayout(size: bounds.size)
+        let gap = ReplayControlsLayout.gap
+        timeline.frame = grid.timeline
+        /// Places `groups` of buttons from the left of `row` (hidden ones take no room).
+        func place(_ groups: [[(view: NSView, width: CGFloat)]], row: Int) -> CGFloat {
+            let shown = groups.map { $0.filter { !$0.view.isHidden } }
+            let (frames, end) = grid.fromLeft(shown.map { $0.map(\.width) }, row: row)
+            for (group, rects) in zip(shown, frames) {
+                for (item, rect) in zip(group, rects) { item.view.frame = rect }
+            }
+            return end
         }
-        place(back, width: 30)
-        place(play, width: 34)
-        place(forward, width: 30, gap: 12)
-        for (_, button) in speeds { place(button, width: button.contentWidth(padding: 7), gap: 2) }
-        x += 10
-        place(live, width: live.contentWidth(padding: 8))
+        // Row 0: transport, speeds, Live; the time and the status on the right.
+        let transport: [(view: NSView, width: CGFloat)] = [(back, 30), (play, 34), (forward, 30)]
+        let rates = speeds.map { (view: $0.button as NSView, width: $0.button.contentWidth(padding: 7)) }
+        let end = place([transport, rates, [(live, live.contentWidth(padding: 8))]], row: 0)
         let timeWidth = ceil(time.intrinsicContentSize.width) + 2
-        let right = bounds.width - inset
-        let statusWidth = max(0, min(ceil(status.intrinsicContentSize.width) + 2, right - timeWidth - 8 - (x + 8)))
-        status.frame = CGRect(x: right - statusWidth, y: y + 4, width: statusWidth, height: 16)
-        time.frame = CGRect(x: right - statusWidth - (statusWidth > 0 ? 8 : 0) - timeWidth, y: y + 4, width: timeWidth, height: 16)
-        // Row 2: Skip silence, Flags only and the flag arrows; Sound on the right.
-        x = inset
-        y -= rowHeight + 4
-        place(skipSilence, width: skipSilence.contentWidth(padding: 8))
-        place(flagsOnly, width: flagsOnly.contentWidth(padding: 8))
-        place(previousFlag, width: 28, gap: 2)
-        place(nextFlag, width: 28, gap: 8)
-        let countWidth = ceil(flagCount.intrinsicContentSize.width) + 2
-        flagCount.frame = CGRect(x: x, y: y + 4, width: countWidth, height: 16)
-        let soundWidth = sound.contentWidth(padding: 8)
-        sound.frame = CGRect(x: right - soundWidth, y: y, width: soundWidth, height: rowHeight)
-        let hintWidth = ceil(headphones.intrinsicContentSize.width) + 2
-        headphones.frame = CGRect(x: sound.frame.minX - 8 - hintWidth, y: y + 4, width: hintWidth, height: 16)
+        let statusWidth = max(0, min(ceil(status.intrinsicContentSize.width) + 2, grid.right - timeWidth - gap - (end + gap)))
+        status.frame = grid.label(x: grid.right - statusWidth, width: statusWidth, row: 0)
+        time.frame = grid.label(x: grid.right - statusWidth - (statusWidth > 0 ? gap : 0) - timeWidth, width: timeWidth, row: 0)
+        // Row 1: Skip silence, Flags only, the flag arrows and the count; Sound on the right.
+        let modes: [(view: NSView, width: CGFloat)] = [(skipSilence, skipSilence.contentWidth(padding: 8)),
+                                                       (flagsOnly, flagsOnly.contentWidth(padding: 8))]
+        let arrows = place([modes, [(previousFlag, 28), (nextFlag, 28)]], row: 1)
+        let soundFrame = grid.fromRight([sound.contentWidth(padding: 8)], row: 1).frames[0]
+        sound.frame = soundFrame
+        let countWidth = max(0, min(ceil(flagCount.intrinsicContentSize.width) + 2, soundFrame.minX - gap - (arrows + gap)))
+        flagCount.frame = grid.label(x: arrows + gap, width: countWidth, row: 1)
+        // "Use headphones" between the count and Sound, cut short ("Use head…") in a narrow window.
+        let hintRoom = soundFrame.minX - gap - (flagCount.frame.maxX + gap)
+        let hintWidth = max(0, min(ceil(headphones.intrinsicContentSize.width) + 2, hintRoom))
+        headphones.frame = grid.label(x: soundFrame.minX - gap - hintWidth, width: hintWidth, row: 1)
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }

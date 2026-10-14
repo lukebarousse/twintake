@@ -266,6 +266,19 @@ private func outcome(correlation: Double?, level: Double? = nil, voiced: Double 
         #expect(MicStatusText.live(waiting).title == "Listening for your voice… 0%")
     }
 
+    /// A take confirmed the Rode: the line says so and that the check is off; no banner, no beep.
+    @Test func aConfirmedTakeShowsNoWarning() {
+        let confirmed = MicDetectorStatus(verdict: .externalMic, correlation: 0.9853, voicedSeconds: 6, progress: 1,
+                                          confirmed: true)
+        let text = MicStatusText.live(confirmed)
+        #expect(text.title == "Rode confirmed · L/R 0.985" && text.tone == .good)
+        #expect(text.detail == "The mic check is off for the rest of this take.")
+        #expect(MicAlert(confirmed) == nil)
+        #expect(CaptureAlerts.list(mic: MicAlert(confirmed), health: CameraHealth(), idle: false).isEmpty)
+        // Before the confirmation the plain line shows.
+        #expect(MicStatusText.live(MicDetectorStatus(verdict: .externalMic, correlation: 0.9853)).title == "Rode detected · L/R 0.985")
+    }
+
     @Test func aLevelOnlyCalibrationNeedsTheMacMic() {
         let level = MicFeatureRule(threshold: 2, hysteresis: 0.8, externalIsHigher: true)
         let levelOnly = MicCalibration(plugged: MicFeatureSample(), unplugged: MicFeatureSample(), correlation: nil, levelDelta: level)
@@ -426,6 +439,10 @@ private func outcome(correlation: Double?, level: Double? = nil, voiced: Double 
         #expect(RecorderSettings.decodeCalibration(Data("nope".utf8)) == nil)
         var other = calibration
         other.version = MicCalibration.currentVersion + 1
+        #expect(RecorderSettings.decodeCalibration(try JSONEncoder().encode(other)) == nil)
+        // Version 2 counted every voiced block; the detector now counts only gated ones.
+        #expect(MicCalibration.currentVersion == 3)
+        other.version = 2
         #expect(RecorderSettings.decodeCalibration(try JSONEncoder().encode(other)) == nil)
     }
 }

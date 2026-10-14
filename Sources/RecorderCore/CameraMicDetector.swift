@@ -16,8 +16,9 @@ import Foundation
 // The detector looks at voiced blocks only: a block whose level is `voiceMarginDb` above that
 // source's running noise floor (the lowest block level of the last `noiseFloorSeconds`) and above
 // `minVoiceDb`. Silence and pauses add no evidence, so they never change the verdict and never
-// warn. Every feature is a mean over a window of voiced time, and a verdict changes only after
-// the evidence stays past the far edge of a hysteresis band for `holdVoicedSeconds` of voice.
+// warn. Every feature is a mean over a window of gated voiced time (the evidence gate, below), and
+// a verdict changes only after the evidence stays past the far edge of a hysteresis band for
+// `holdVoicedSeconds` of it.
 //
 // Sounds that only the MacBook hears (typing on its keyboard, its speakers) are not the voice:
 // the level against the Mac mic counts only blocks where both mics hear it, and the silent-mic
@@ -28,6 +29,22 @@ import Foundation
 // about 50 dB above the camera's floor, the Mac mic at its floor) pulled the 6 s mean down to
 // 0.785 and 0.737, and the verdict flipped to the built-in mic although the camera sent silence
 // in between.
+//
+// Faint sounds are no evidence either: the mic rules count a voiced block only when it is
+// `evidenceMarginDb` above the camera's floor and above `minEvidenceDb` (the evidence gate). Through
+// the Cam Link, the camera's right channel is its left channel one sample (21 µs) later, so the
+// L/R correlation of the Rode is the sound's own correlation over one sample: near 1 for voiced
+// speech (most of its energy under 1 kHz), lower for broadband sound. In take 2026-10-14_093840
+// (the Rode in all the time) faint room sound, typing and the replay's sound from the speakers
+// (camera median -55 dBFS, 13 dB above its floor) gave 6 s means of 0.857 and 0.853 and two false
+// built-in mic warnings; R one sample later still matched L at 0.998 there. The gate keeps 90% of
+// the speech blocks (the camera within 1 s of a block of -40 dBFS or more, the Mac mic 15 dB
+// above its floor) and passes 1 of the 240 blocks behind those two warnings.
+//
+// A take checks only until the external mic is confirmed (`MicDetectorSettings.stopsWhenConfirmed`):
+// the speaker does not unplug it once the take runs, and long pauses are normal, so a warning in
+// the middle of a take would only distract. Before recording (the idle meters) and in a mic check,
+// the rules never stop.
 
 /// Which mic the camera audio comes from.
 public enum MicVerdict: String, Codable, Sendable, Hashable, CaseIterable {
@@ -69,22 +86,37 @@ public struct MicDetectorSettings: Codable, Sendable, Hashable {
     public var recoverVoicedSeconds: Double
     /// The camera audio may lag (or lead) the Mac mic by up to this many blocks (50 ms each).
     public var lagToleranceBlocks: Int
+    /// The evidence gate: a voiced camera block counts for the mic rules (the L/R correlation, the
+    /// level against the Mac mic) only when it is this far above the camera's noise floor...
+    public var evidenceMarginDb: Double
+    /// ...and above this absolute level.
+    public var minEvidenceDb: Double
+    /// A take: once the external mic is confirmed (the evidence past the far edge of the band for
+    /// `holdVoicedSeconds`, over a full window), the verdict and the silent-mic warning stop for the
+    /// rest of the detector's life. Off before recording and in a mic check.
+    public var stopsWhenConfirmed: Bool
 
     public init(voiceMarginDb: Double = 10, minVoiceDb: Double = -65, clearVoiceMarginDb: Double = 15,
                 responseMarginDb: Double = 6, minResponseDb: Double = -90, noiseFloorSeconds: Double = 3,
                 verdictVoicedSeconds: Double = 6, holdVoicedSeconds: Double = 1, silentMicVoicedSeconds: Double = 8,
                 silentResponseFraction: Double = 0.1, recoverResponseFraction: Double = 0.5,
-                recoverVoicedSeconds: Double = 2, lagToleranceBlocks: Int = 4) {
+                recoverVoicedSeconds: Double = 2, lagToleranceBlocks: Int = 4, evidenceMarginDb: Double = 20,
+                minEvidenceDb: Double = -50, stopsWhenConfirmed: Bool = false) {
         self.voiceMarginDb = voiceMarginDb; self.minVoiceDb = minVoiceDb; self.clearVoiceMarginDb = clearVoiceMarginDb
         self.responseMarginDb = responseMarginDb; self.minResponseDb = minResponseDb
         self.noiseFloorSeconds = noiseFloorSeconds; self.verdictVoicedSeconds = verdictVoicedSeconds
         self.holdVoicedSeconds = holdVoicedSeconds; self.silentMicVoicedSeconds = silentMicVoicedSeconds
         self.silentResponseFraction = silentResponseFraction; self.recoverResponseFraction = recoverResponseFraction
         self.recoverVoicedSeconds = recoverVoicedSeconds; self.lagToleranceBlocks = lagToleranceBlocks
+        self.evidenceMarginDb = evidenceMarginDb; self.minEvidenceDb = minEvidenceDb
+        self.stopsWhenConfirmed = stopsWhenConfirmed
     }
 
-    /// While recording: a verdict after 6 s of voice, the silent warning after 8 s of clear voice.
+    /// Before recording: a verdict after 6 s of gated voice, the silent warning after 8 s of clear
+    /// voice. The rules never stop.
     public static let standard = MicDetectorSettings()
+    /// While recording: the standard rules until the external mic is confirmed, then none.
+    public static let take = MicDetectorSettings(stopsWhenConfirmed: true)
     /// A 10 s mic check: a verdict after 4 s of voice, the silent warning after 5 s of clear voice.
     public static let micCheck = MicDetectorSettings(verdictVoicedSeconds: 4, holdVoicedSeconds: 0.5,
                                                      silentMicVoicedSeconds: 5)
@@ -97,22 +129,26 @@ public struct MicDetectorStatus: Sendable, Equatable {
     public var verdict: MicVerdict
     /// The Mac mic hears clear voice but the camera mic stays at its noise floor.
     public var cameraMicSilent: Bool
-    /// Mean L/R correlation of the camera audio over the voiced window; nil before any voice or for mono.
+    /// Mean L/R correlation of the camera audio over the window of gated voiced blocks; nil before
+    /// any or for mono.
     public var correlation: Double?
     /// Mean camera mic level minus Mac mic level over the window of blocks where both hear the voice, in dB.
     public var levelDeltaDb: Double?
-    /// Voiced camera time in the verdict window, in seconds (up to the window length).
+    /// Gated voiced camera time in the verdict window, in seconds (up to the window length).
     public var voicedSeconds: Double
     /// 0 to 1: how much of the voiced time the verdict needs has been heard.
     public var progress: Double
     /// True when a saved calibration sets the rules, false for the default rule.
     public var calibrated: Bool
+    /// A take confirmed the external mic: the verdict and the warnings stopped for the rest of it.
+    public var confirmed: Bool
 
     public init(verdict: MicVerdict = .unknown, cameraMicSilent: Bool = false, correlation: Double? = nil,
-                levelDeltaDb: Double? = nil, voicedSeconds: Double = 0, progress: Double = 0, calibrated: Bool = false) {
+                levelDeltaDb: Double? = nil, voicedSeconds: Double = 0, progress: Double = 0, calibrated: Bool = false,
+                confirmed: Bool = false) {
         self.verdict = verdict; self.cameraMicSilent = cameraMicSilent; self.correlation = correlation
         self.levelDeltaDb = levelDeltaDb; self.voicedSeconds = voicedSeconds; self.progress = progress
-        self.calibrated = calibrated
+        self.calibrated = calibrated; self.confirmed = confirmed
     }
 
     /// The silent camera mic warning.
@@ -128,12 +164,35 @@ public struct MicDetectorStatus: Sendable, Equatable {
     }
 }
 
-/// A verdict or warning change, for events.jsonl (`mic_detector`).
+/// A verdict or warning change, for events.jsonl (`mic_detector`), or the confirmation of the
+/// external mic in a take (`mic_confirmed`), or both at once.
 public struct MicDetectorChange: Sendable, Equatable {
     public var from: MicDetectorStatus
     public var to: MicDetectorStatus
     /// The correlation threshold in use (nil when no correlation rule applies).
     public var correlationThreshold: Double?
+    /// The block the change came with (host clock: `AudioBlock.index`), nil when it had none.
+    public var blockIndex: Int64?
+
+    public init(from: MicDetectorStatus, to: MicDetectorStatus, correlationThreshold: Double?, blockIndex: Int64? = nil) {
+        self.from = from; self.to = to; self.correlationThreshold = correlationThreshold; self.blockIndex = blockIndex
+    }
+
+    /// The verdict or the silent-mic warning changed: a `mic_detector` event.
+    public var verdictOrWarningChanged: Bool { from.verdict != to.verdict || from.cameraMicSilent != to.cameraMicSilent }
+    /// The external mic was confirmed with this block: a `mic_confirmed` event.
+    public var confirmedNow: Bool { to.confirmed && !from.confirmed }
+
+    /// `mic_confirmed`: what confirmed the external mic. `elapsedS` is the take time of the block.
+    public func confirmationData(elapsedS: Double?) -> [String: String] {
+        var data = ["verdict": to.verdict.rawValue, "voiced_s": String(format: "%.1f", to.voicedSeconds),
+                    "calibrated": String(to.calibrated)]
+        data["correlation"] = to.correlation.map { String(format: "%.3f", $0) }
+        data["level_vs_screen_mic_db"] = to.levelDeltaDb.map { String(format: "%.1f", $0) }
+        data["correlation_threshold"] = correlationThreshold.map { String(format: "%.3f", $0) }
+        data["elapsed_s"] = elapsedS.map { String(format: "%.1f", $0) }
+        return data
+    }
 
     public var eventData: [String: String] {
         var data = ["verdict": to.verdict.rawValue, "previous": from.verdict.rawValue,
@@ -169,9 +228,10 @@ public struct MicFeatureStats: Codable, Sendable, Hashable {
 
 /// The features the detector heard over a stretch of time: one calibration sample, or a take.
 public struct MicFeatureSample: Codable, Sendable, Hashable {
-    /// Camera L/R correlation over the voiced blocks (the ones both mics hear while the Mac mic runs).
+    /// Camera L/R correlation over the gated voiced blocks (the ones both mics hear while the Mac
+    /// mic runs).
     public var correlation: MicFeatureStats
-    /// Camera level minus Mac mic level over the blocks where both mics hear the voice, in dB.
+    /// Camera level minus Mac mic level over the gated blocks where both mics hear the voice, in dB.
     public var levelDeltaDb: MicFeatureStats
     /// Voiced camera time, in seconds.
     public var cameraVoicedSeconds: Double
@@ -279,7 +339,10 @@ public enum MicCalibrationError: Error, Sendable, Equatable, LocalizedError {
 /// external mic in, none without it), so they are refused.
 public struct MicCalibration: Codable, Sendable, Hashable {
     /// 2: the level against the Mac mic counts only blocks where both mics hear the voice.
-    public static let currentVersion = 2
+    /// 3: the samples count only the blocks past the evidence gate, like the detector's evidence
+    /// (gated means read higher: 0.977 against 0.927 for the Rode in take 2026-10-14_093840). A
+    /// version 2 threshold sits between ungated means, so it no longer loads: calibrate again.
+    public static let currentVersion = 3
     /// Voiced time each sample needs for a rule.
     public static let minSampleSeconds = 3.0
     /// Smallest mean difference that counts.
@@ -341,7 +404,8 @@ public struct MicSourceReport: Codable, Sendable, Hashable {
     public var verdictsSeen: [MicVerdict]
     /// The silent camera mic warning was on at some point.
     public var cameraMicSilent: Bool
-    /// Mean camera L/R correlation over the take's voiced camera blocks.
+    /// Mean camera L/R correlation over the take's gated voiced camera blocks (1.5; before: every
+    /// voiced block).
     public var meanCorrelation: Double?
     /// Mean camera level minus Mac mic level over the take's blocks where both mics hear the voice, in dB.
     public var levelVsScreenMicDb: Double?
@@ -353,14 +417,19 @@ public struct MicSourceReport: Codable, Sendable, Hashable {
     public var calibrated: Bool
     /// The correlation threshold used, nil when no correlation rule applied.
     public var correlationThreshold: Double?
+    /// 1.5: the take confirmed the external mic, so the mic rules stopped for the rest of it. Nil in
+    /// recordings before 1.5 (they checked the whole take).
+    public var confirmed: Bool?
+    /// 1.5: the take time of the confirmation, in seconds since `started_at_host_ns`.
+    public var confirmedAtS: Double?
 
     public init(verdict: MicVerdict, verdictsSeen: [MicVerdict], cameraMicSilent: Bool, meanCorrelation: Double?,
                 levelVsScreenMicDb: Double?, voicedS: Double, screenMicVoicedS: Double, calibrated: Bool,
-                correlationThreshold: Double?) {
+                correlationThreshold: Double?, confirmed: Bool? = nil, confirmedAtS: Double? = nil) {
         self.verdict = verdict; self.verdictsSeen = verdictsSeen; self.cameraMicSilent = cameraMicSilent
         self.meanCorrelation = meanCorrelation; self.levelVsScreenMicDb = levelVsScreenMicDb; self.voicedS = voicedS
         self.screenMicVoicedS = screenMicVoicedS; self.calibrated = calibrated
-        self.correlationThreshold = correlationThreshold
+        self.correlationThreshold = correlationThreshold; self.confirmed = confirmed; self.confirmedAtS = confirmedAtS
     }
 }
 
@@ -462,6 +531,13 @@ public struct CameraMicDetector: Sendable {
     private var recentCount = 0
     private var answers: AnswerWindow
     private var pending: (verdict: MicVerdict, count: Int)?
+    /// Evidence blocks in a row past the far edge of the band toward the external mic (a take).
+    private var confirming = 0
+    /// The block that confirmed the external mic (`AudioBlock.index`), nil before. Kept after
+    /// `resumeChecks()`: it belongs to the take.
+    public private(set) var confirmedAtIndex: Int64?
+    /// Made for a take (`stopsWhenConfirmed`): its report says whether the take confirmed the mic.
+    private let reportsConfirmation: Bool
     private var verdictsSeen: [MicVerdict] = []
     private var silentSeen = false
     private var cameraBlocks = 0
@@ -476,6 +552,7 @@ public struct CameraMicDetector: Sendable {
 
     public init(settings: MicDetectorSettings = .standard, calibration: MicCalibration? = nil) {
         self.settings = settings
+        reportsConfirmation = settings.stopsWhenConfirmed
         status = MicDetectorStatus()
         let floorBlocks = MicDetectorSettings.blocks(settings.noiseFloorSeconds)
         cameraFloor = NoiseFloor(blocks: floorBlocks)
@@ -502,17 +579,29 @@ public struct CameraMicDetector: Sendable {
     /// The correlation threshold in use.
     public var correlationThreshold: Double? { correlationRule?.threshold }
 
+    /// The take is over: the rules run again from here (before recording they never stop), with
+    /// the evidence heard so far. The report still says whether the take confirmed the mic.
+    public mutating func resumeChecks() {
+        settings.stopsWhenConfirmed = false
+        status.confirmed = false
+        confirming = 0
+    }
+
     /// One block of time: the camera mic's block and the Mac mic's block (either may be missing).
-    /// Returns the change when the verdict or the silent warning changed.
-    public mutating func add(camera: AudioBlock?, reference: AudioBlock?) -> MicDetectorChange? {
+    /// Returns the change when the verdict, the silent warning or the confirmation changed.
+    /// - Parameter evidence: false while both mics may hear something that is not the speaker (the
+    ///   replay's sound from the speakers): the noise floors follow the blocks, nothing else counts.
+    public mutating func add(camera: AudioBlock?, reference: AudioBlock?, evidence collect: Bool = true) -> MicDetectorChange? {
         let before = status
         var cameraVoiced = false
+        var cameraGated = false
         var cameraAnswers = false
         if let camera {
             cameraBlocks += 1
             let level = camera.rmsDb
             let floor = cameraFloor.add(level)
             cameraVoiced = level > floor + settings.voiceMarginDb && level > settings.minVoiceDb
+            cameraGated = cameraVoiced && level >= floor + settings.evidenceMarginDb && level >= settings.minEvidenceDb
             cameraAnswers = level > floor + settings.responseMarginDb && level > settings.minResponseDb
         }
         var referenceVoiced = false
@@ -523,34 +612,18 @@ public struct CameraMicDetector: Sendable {
             referenceVoiced = level > floor + settings.voiceMarginDb && level > settings.minVoiceDb
             clearVoice = level > floor + settings.clearVoiceMarginDb && level > settings.minVoiceDb
         }
-
         var evidence = false
-        if cameraVoiced { cameraVoicedBlocks += 1 }
-        // Counted with or without a camera block: a camera that sends nothing is "silent", not "too
-        // little voice" (`MicFeatureSample.problem`).
-        if referenceVoiced { referenceVoicedBlocks += 1 }
-        // The correlation counts only the voice. With the Mac mic running, that is a block both mics
-        // hear: a sound only the camera hears (the click of a plug in its mic jack, handling noise)
-        // is no voice. Without a Mac mic block (Camera mode with no Mac mic, screen mic None), the
-        // camera's own voiced blocks count.
-        if cameraVoiced, reference == nil || referenceVoiced, let r = camera?.correlation, r.isFinite {
-            correlations.add(r)
-            sample.correlation.add(r)
-            evidence = true
+        if collect {
+            evidence = collectEvidence(camera: camera, reference: reference, cameraVoiced: cameraVoiced,
+                                       cameraGated: cameraGated, referenceVoiced: referenceVoiced)
         }
-        // Only when the camera hears it too: a sound only the MacBook hears (its keyboard, its
-        // speakers) says nothing about the camera's mic.
-        if referenceVoiced, cameraVoiced, let camera, let reference {
-            let delta = camera.rmsDb - reference.rmsDb
-            deltas.add(delta)
-            sample.levelDeltaDb.add(delta)
-            if levelRule != nil { evidence = true }
+        // Once a take confirmed the external mic, the rules are off: the evidence still goes into
+        // the take's report, but nothing changes the verdict or warns.
+        if !status.confirmed {
+            // A paused block is no voice in the lag window: it never counts as a missing answer.
+            checkSilentMic(Probe(clearVoice: collect && clearVoice, cameraPresent: camera != nil, cameraAnswers: cameraAnswers))
+            if evidence { decide(at: camera?.index ?? reference?.index) }
         }
-        sample.cameraVoicedSeconds = Double(cameraVoicedBlocks) / AudioBlock.perSecond
-        sample.referenceVoicedSeconds = Double(referenceVoicedBlocks) / AudioBlock.perSecond
-
-        checkSilentMic(Probe(clearVoice: clearVoice, cameraPresent: camera != nil, cameraAnswers: cameraAnswers))
-        if evidence { decide() }
 
         status.correlation = correlations.mean
         status.levelDeltaDb = deltas.mean
@@ -561,8 +634,41 @@ public struct CameraMicDetector: Sendable {
         } else {
             status.progress = levelRule == nil ? 0 : min(1, Double(deltas.count) / needed)
         }
-        guard status.verdict != before.verdict || status.cameraMicSilent != before.cameraMicSilent else { return nil }
-        return MicDetectorChange(from: before, to: status, correlationThreshold: correlationRule?.threshold)
+        guard status.verdict != before.verdict || status.cameraMicSilent != before.cameraMicSilent
+                || status.confirmed != before.confirmed else { return nil }
+        return MicDetectorChange(from: before, to: status, correlationThreshold: correlationRule?.threshold,
+                                 blockIndex: camera?.index ?? reference?.index)
+    }
+
+    /// Adds one block's evidence: the voiced time of each mic, and the features of a gated camera
+    /// block. True when a feature with a rule got a value.
+    private mutating func collectEvidence(camera: AudioBlock?, reference: AudioBlock?, cameraVoiced: Bool,
+                                          cameraGated: Bool, referenceVoiced: Bool) -> Bool {
+        var evidence = false
+        if cameraVoiced { cameraVoicedBlocks += 1 }
+        // Counted with or without a camera block: a camera that sends nothing is "silent", not "too
+        // little voice" (`MicFeatureSample.problem`).
+        if referenceVoiced { referenceVoicedBlocks += 1 }
+        // The correlation counts only the voice, and only a clear one (the evidence gate). With the
+        // Mac mic running, that is a block both mics hear: a sound only the camera hears (the click
+        // of a plug in its mic jack, handling noise) is no voice. Without a Mac mic block (Camera
+        // mode with no Mac mic, screen mic None), the camera's own gated blocks count.
+        if cameraGated, reference == nil || referenceVoiced, let r = camera?.correlation, r.isFinite {
+            correlations.add(r)
+            sample.correlation.add(r)
+            evidence = true
+        }
+        // Only when the camera hears it too: a sound only the MacBook hears (its keyboard, its
+        // speakers) says nothing about the camera's mic. Gated like the correlation.
+        if referenceVoiced, cameraGated, let camera, let reference {
+            let delta = camera.rmsDb - reference.rmsDb
+            deltas.add(delta)
+            sample.levelDeltaDb.add(delta)
+            if levelRule != nil { evidence = true }
+        }
+        sample.cameraVoicedSeconds = Double(cameraVoicedBlocks) / AudioBlock.perSecond
+        sample.referenceVoicedSeconds = Double(referenceVoicedBlocks) / AudioBlock.perSecond
+        return evidence
     }
 
     /// The silent camera mic: the Mac mic hears clear voice for `silentMicVoicedSeconds` and the
@@ -597,8 +703,10 @@ public struct CameraMicDetector: Sendable {
         }
     }
 
-    /// Combines the features over full windows into a verdict, with hysteresis and a hold.
-    private mutating func decide() {
+    /// Combines the features over full windows into a verdict, with hysteresis and a hold. In a
+    /// take (`stopsWhenConfirmed`), evidence past the far edge of the band toward the external mic
+    /// for the hold, with the verdict external, confirms the external mic.
+    private mutating func decide(at index: Int64?) {
         var weighted = 0.0, weights = 0.0
         if let rule = correlationRule, correlations.isFull, let mean = correlations.mean {
             weighted += rule.weight * rule.score(mean)
@@ -610,6 +718,16 @@ public struct CameraMicDetector: Sendable {
         }
         guard weights > 0 else { return }
         let z = weighted / weights
+        let hold = MicDetectorSettings.blocks(settings.holdVoicedSeconds)
+        defer {
+            confirming = z >= 1 ? confirming + 1 : 0
+            if settings.stopsWhenConfirmed, confirming >= hold, status.verdict == .externalMic {
+                status.confirmed = true
+                status.cameraMicSilent = false
+                pending = nil
+                confirmedAtIndex = index
+            }
+        }
         let candidate: MicVerdict
         switch status.verdict {
         case .unknown: candidate = z >= 0 ? .externalMic : .builtInMic
@@ -621,7 +739,7 @@ public struct CameraMicDetector: Sendable {
             return
         }
         let count = (pending?.verdict == candidate ? pending?.count ?? 0 : 0) + 1
-        if count >= MicDetectorSettings.blocks(settings.holdVoicedSeconds) {
+        if count >= hold {
             status.verdict = candidate
             pending = nil
             if verdictsSeen.last != candidate { verdictsSeen.append(candidate) }
@@ -638,7 +756,8 @@ public struct CameraMicDetector: Sendable {
             meanCorrelation: sample.correlation.count > 0 ? Self.round(sample.correlation.mean, 4) : nil,
             levelVsScreenMicDb: sample.levelDeltaDb.count > 0 ? Self.round(sample.levelDeltaDb.mean, 1) : nil,
             voicedS: Self.round(sample.cameraVoicedSeconds, 2), screenMicVoicedS: Self.round(sample.referenceVoicedSeconds, 2),
-            calibrated: status.calibrated, correlationThreshold: correlationRule.map { Self.round($0.threshold, 4) })
+            calibrated: status.calibrated, correlationThreshold: correlationRule.map { Self.round($0.threshold, 4) },
+            confirmed: reportsConfirmation ? confirmedAtIndex != nil : nil)
     }
 
     static func round(_ value: Double, _ digits: Int) -> Double {

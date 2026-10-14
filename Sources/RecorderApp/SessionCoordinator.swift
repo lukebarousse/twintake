@@ -2503,6 +2503,8 @@ final class SessionCoordinator {
         checkUsesIdleMeters = !plan.live.isEmpty
         activeMeterSources = MeterSources.check(cameraAudio: devices.cameraAudio != nil, screenMic: devices.screenMic != nil)
         micCheck = MicCheckProgress(purpose: purpose, startedAt: Date(), seconds: MicCheck.defaultSeconds)
+        // The replay plays muted until the check ends: the check hears the speaker, not the speakers.
+        replay?.micCheckChanged(running: true)
         if purpose == .check { micCheckOutcome = nil }
         let flowID = purpose.isCalibration ? calibrationFlow?.id : nil
         micCheckWindowNote = nil
@@ -2599,6 +2601,7 @@ final class SessionCoordinator {
         micCheckRun = nil
         micCheckTask = nil
         micCheck = nil
+        replay?.micCheckChanged(running: false)
         checkOwnSources = []
         checkUsesIdleMeters = false
         // A take that starts sets its own sources.
