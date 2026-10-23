@@ -322,6 +322,11 @@ final class SessionCoordinator {
     @ObservationIgnored private var takeHasPillWindow = false
     /// Why keystrokes are hidden while another app keeps secure keyboard entry on, for the menu.
     private(set) var keystrokeSecureInputNote: String?
+    /// The event tap (Input Monitoring) got a key press, so the keystrokes come from it and
+    /// shortcuts other apps own show too.
+    private(set) var keystrokeTapProven = false
+    /// Input Monitoring is allowed but the tap does not start (it can need a relaunch), for the menu.
+    private(set) var keystrokeTapNote: String?
     /// The replay window shows: the Replay buttons light up.
     private(set) var replayShown = false
     /// Runs preflight every `controlBarPreflightInterval` while the bar shows, TwinTake is idle
@@ -3127,6 +3132,12 @@ final class SessionCoordinator {
     /// The menu's note while another app keeps secure keyboard entry on (`KeystrokeController`).
     func setKeystrokeSecureInputNote(_ note: String?) {
         if note != keystrokeSecureInputNote { keystrokeSecureInputNote = note }
+    }
+
+    /// The key source for the menu (`KeystrokeController`): the tap proved itself, and the relaunch note.
+    func setKeystrokeTap(proven: Bool, note: String?) {
+        if proven != keystrokeTapProven { keystrokeTapProven = proven }
+        if note != keystrokeTapNote { keystrokeTapNote = note }
     }
 
     /// The frame the pill sits in: the take's frame (at its display's place now; nil while that

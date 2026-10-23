@@ -44,6 +44,10 @@ session coordinator).
 6. **TwinTake's own windows stay out of recordings** (`sharingType = .none` plus self-exclusion
    in the screen filter) and never take focus from the recorded app.
 7. **Keep colors as captured.** Don't change pixel formats or color tags without a device test.
+8. **C callbacks are file-scope functions.** A closure literal passed as a C callback inside a
+   `@MainActor` type inherits the main actor; Swift then checks the thread on every call and traps
+   when the callback runs elsewhere (the event tap's thread did, and a take ended). Pass a
+   file-scope function (see `keyTapCallback` in `KeyEventTap.swift`) and test it from a plain thread.
 
 ## Conventions
 

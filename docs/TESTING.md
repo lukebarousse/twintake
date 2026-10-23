@@ -1,6 +1,6 @@
 # First real test run
 
-Unit tests cover the logic (811 tests: `swift test`). These checks need real devices.
+Unit tests cover the logic (858 tests: `swift test`). These checks need real devices.
 
 ## Before you start
 
@@ -12,7 +12,7 @@ Unit tests cover the logic (811 tests: `swift test`). These checks need real dev
 ## Steps
 
 1. Run `scripts/build-app.sh`, then `open build/TwinTake.app`. Click the record icon in the menu bar.
-2. Allow Camera, Microphone, Screen Recording and Accessibility. Quit and reopen the app after you allow Screen Recording.
+2. Allow Camera, Microphone, Screen Recording and Accessibility. Quit and reopen the app after you allow Screen Recording. Leave Input Monitoring for the keystroke checks.
 3. **Screen only:** turn on "Show frame", record 30 s while you speak, then Stop. `screen.mov` should play with A1 = Mac mic and A2 = system audio (Options > Record computer sound).
 4. **Both:** put a window in front and click Record on the control bar. The window snaps into the frame. Record 2 min. Press ⌃⌥⌘B once and click Flag on the control bar once, then click Stop on the bar.
 5. **session.json:** `status` is `complete`. Only the camera mic has `dialogue: true`. Every track has `first_pts_host_ns`. `screen.snapped_window` is filled in.
@@ -169,7 +169,7 @@ Both mode, camera at 4K 24p, the Rode in the a6600, the camera window on, the co
 
 ## Keystrokes
 
-Bottom 16:9 frame on the laptop, Parallels Desktop (Windows 11 VM) with VS Code inside it, Dia, the control bar and the camera window on. Menu > Keystrokes is **Always**, **Include keystrokes in screen.mov** is on, and **Key names** is **Auto** (the defaults). Accessibility is allowed.
+Bottom 16:9 frame on the laptop, Parallels Desktop (Windows 11 VM) with VS Code inside it, Dia, the control bar and the camera window on. Menu > Keystrokes is **Always**, **Include keystrokes in screen.mov** is on, and **Key names** is **Auto** (the defaults). Accessibility is allowed. Run checks 1 to 13 once without Input Monitoring and once with it (see Input Monitoring below): the results are the same, except checks 7 and 11.
 
 1. **Mac shortcuts:** click Dia and press ⇧⌘P, ⌥⌘7, Return, Esc, ⇧Tab, Delete, ← and F5 (with fn). Each shows whole (never cut to "…") in the dark pill near the bottom of the frame, centered: **⇧⌘P**, **⌥⌘7**, **⏎**, **⎋**, **⇧⇥**, **⌫**, **←**, **F5**. ⌘Return reads **⌘⏎**; fn+Return (keypad Enter) reads **⌅**. Every symbol has the same weight as ⌘ and sits on the same line (none small or raised). Hold ⌘ for a second, then add ⇧: the pill shows **⌘**, then **⇧⌘**, then **⇧⌘P** when P lands. A quick ⇧⌘P shows only **⇧⌘P**. It stays about 1.5 s after the last key, then fades. The pill looks the same in light and dark mode. Dia keeps the focus the whole time (its menu bar stays).
 2. **Typing shows nothing:** type a sentence with capitals, digits and spaces in Dia (and in the VM): no pill. Type ⌥⇧- (—) and ⌥E then E (é) in Dia: no pill, and holding ⌥ shows nothing. ⌥← still shows **⌥←**. A password field (any web login, or Terminal with Secure Keyboard Entry): ⌘A and Return there show nothing either.
@@ -177,13 +177,26 @@ Bottom 16:9 frame on the laptop, Parallels Desktop (Windows 11 VM) with VS Code 
 4. **Counter:** press ⌘Z three times quickly in Dia: the pill reads **⌘Z ×3**, in place (never two pills). Wait 2 s and press ⌘Z: **⌘Z**. Hold → for 2 s: **→** stays on and does not count. Press Return four times: **⏎ ×4**; Delete twice: **⌫ ×2**. The pill grows with each count and stays centered.
 5. **Whole text, bigger type:** in the laptop's bottom 16:9 frame the text is about 34 pt, a little larger than before (28 pt). Hold ⇧⌘ for a second: the pill reads **⇧⌘** in full, then **⇧⌘P** when P lands. Press ⌃⌥⇧⌘4 in an app where it does nothing: **⌃⌥⇧⌘4**. In the VM: Ctrl+Shift+Backspace three times reads **Ctrl+Shift+Backspace ×3**. No text is ever cut to "…", on screen or in screen.mov.
 6. **⇧ alone:** hold ⇧ for 2 s and let go, then type a capital letter: no pill at any point.
-7. **Screenshot shortcuts:** press ⇧⌘4, then Esc to cancel the crosshair. The pill reads **⇧⌘** while you hold the keys. If it then reads **⇧⌘4**, macOS passes the key to TwinTake. If it stays **⇧⌘** (the key never comes), macOS keeps its screenshot keys from other apps, like TwinTake's own hotkeys; note which one you see. Same for ⇧⌘3 and ⇧⌘5.
+7. **Screenshot shortcuts:** with CleanShot X running, press ⇧⌘4, then Esc to cancel the crosshair. Without Input Monitoring the pill reads **⇧⌘** only (CleanShot X owns the key). With Input Monitoring it reads **⇧⌘4**, then **⎋**. Same for ⇧⌘3 and ⇧⌘5.
 8. **In screen.mov:** record 30 s in Both with Parallels snapped and press ⇧⌘P, ⌘Z three times and Return. In screen.mov the pill shows at the bottom center of the frame (about 14% of the height up), with the same text and timing as on screen. The camera window and the control bar are not in screen.mov (put them inside the frame to check). events.jsonl has `keystroke` lines with `"label":"Ctrl+Shift+P"`, `"mac_label":"⇧⌘P"`, `"repeat":"1"` to `"3"` for ⌘Z, `"label":"Enter"` with `"mac_label":"⏎"` for Return in the VM, and `elapsed_s` that matches the control bar time; `session_start` has `"keystrokes":"always"` and `"keystrokes_in_screen":"on"`. No line holds typed text. ⌃⌥⌘B (Flag) shows no pill, not even ⌃⌥⌘ while you hold it or let go slowly, and logs no `keystroke`.
 9. **Off, While recording, Always:** pick **Off**: no pill, idle or recording. Pick **While recording**: no pill while idle; during a take the pill shows; after Stop it shows no more. Pick **Always**: the pill shows idle and recording. Turn off **Include keystrokes in screen.mov** and record 20 s with shortcuts: the pill shows on screen but not in screen.mov (`"keystrokes_in_screen":"off"`), and the `keystroke` lines are still in events.jsonl. Start a take with Off and switch to Always during it: the pill shows on screen but not in screen.mov (`"keystrokes_in_screen":"off"`). Start a take with Always, switch to Off and back to Always: the later shortcuts are in screen.mov.
 10. **Hide other windows:** turn on Options > Hide other windows, snap Dia, record 20 s with shortcuts. screen.mov shows only Dia and the pill; the camera window, the control bar and other apps' windows over the frame are not in it. During the take, hide Dia (⌘H) for 5 s, then click its Dock icon: screen.mov is black (with the pill) while it is hidden, and events.jsonl has the warnings "The recorded window is not on screen …" and "The recorded window is back." about 1 s after each change. Set Keystrokes to Off and record 10 s: session.json has `capture` `window` and screen.mov shows Dia alone, as without keystrokes.
-11. **No Accessibility:** turn off TwinTake in System Settings > Privacy & Security > Accessibility. No pill shows, no macOS prompt appears, and the menu's Keystrokes row says "Keystrokes need Accessibility…". Turn it on again: within about 3 s the pill works again, without a restart.
+11. **No Accessibility:** with Input Monitoring off, turn off TwinTake in System Settings > Privacy & Security > Accessibility. No pill shows, no macOS prompt appears, and the menu's Keystrokes row says "Keystrokes need Accessibility…". Turn it on again: within about 3 s the pill works again, without a restart. With Input Monitoring on, the pill keeps working without Accessibility. Until the first key press the row reads "If no keystrokes show, allow Accessibility …"; after it, the row shows no note.
 12. **Other layouts:** add the German keyboard layout, switch to it, press ⌘ with the key between T and U: the pill reads **⌘Z**. Switch back.
 13. **Recording first:** a 5 min take in Both with shortcuts every few seconds has `dropped_frames` 0 in session.json, like a take without keystrokes.
+
+### Input Monitoring
+
+CleanShot X runs, and its capture shortcut is ⇧⌘4. Keystrokes is **Always**. Start with Input Monitoring off (System Settings > Privacy & Security > Input Monitoring: TwinTake off or not in the list).
+
+1. **Before you allow it:** the Permissions section does not open by itself for Input Monitoring. Its row reads "Optional, for showing shortcuts other apps own (e.g. ⇧⌘4) · Not allowed". No macOS prompt appears at launch or while you use keystrokes. Under the Keystrokes arrow: "Shortcuts another app owns … show only their ⇧⌘". Press ⇧⌘4 (then Esc): the pill shows only **⇧⌘**.
+2. **Allow it:** click **Allow…** next to Input Monitoring. macOS asks once ("TwinTake would like to receive keystrokes from any application"). Turn TwinTake on in Input Monitoring. Click Allow… again later: it opens System Settings, with no second prompt. The gear opens Privacy & Security > Input Monitoring.
+3. **Switch:** before any key, the line under the Keystrokes arrow reads "Input Monitoring is allowed …". Within about 6 s, press ⇧⌘4: the pill reads **⇧⌘4**, then **⎋** when you cancel, and the line reads "Input Monitoring is on …". Holding ⇧⌘ alone never changes the line. If instead the Keystrokes row says "Input Monitoring is allowed, but macOS has not given it to TwinTake yet …", quit and reopen TwinTake, and press ⇧⌘4 again. If the pill shows only **⇧⌘** (then **⎋**) and the row shows no note, the tap gets no keys yet: press ⌘Z four times in Dia, and the row then asks for a relaunch.
+4. **TwinTake's own shortcuts:** press ⌃⌥⌘B (Flag): no pill, not even ⌃⌥⌘ while you hold it or let go slowly. During a take, events.jsonl has the flag `marker` and no `keystroke` line for it.
+5. **No double counts:** press ⌘Z once: **⌘Z** (not ×2). Press it three times: **⌘Z ×3**. Hold → for 2 s: **→**, no count. Click the menu-bar icon and press ⌘Z in TwinTake's menu: **⌘Z** once. During a take, events.jsonl has one `keystroke` line for each press.
+6. **Typing shows nothing:** type a sentence with capitals in Dia and in the VM, and type in a password field: no pill. In the Parallels VM, ⇧⌘P still reads **Ctrl+Shift+P**.
+7. **Take it away:** turn TwinTake off in Input Monitoring. Within about 3 s the pill works as before (⇧⌘4 shows only **⇧⌘**), with no prompt. Set Keystrokes to **Off**: no pill, and the line under the arrow does not ask you to allow Input Monitoring once it is on again. Turn Input Monitoring on and Keystrokes to **Always** again: ⇧⌘4 reads **⇧⌘4** within a few seconds.
+8. **Head or tail of the session's taps:** the tap sits at the head by default (it sees keys as typed, before a key remapper changes them). To try the tail (it sees what apps get), run `defaults write com.lukebarousse.twintake keystrokeTapAtTail -bool true`, quit and reopen TwinTake, and repeat steps 3 and 5. Note whether ⇧⌘4 still reads **⇧⌘4**. Go back with `defaults delete com.lukebarousse.twintake keystrokeTapAtTail` and a relaunch.
 
 ## Frame position, Dock and Parallels
 

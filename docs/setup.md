@@ -121,7 +121,7 @@ The screen file has a constant frame rate. For even motion, two screen frames mu
 
 ## Permissions
 
-TwinTake needs four macOS permissions:
+TwinTake needs four macOS permissions, and can use a fifth:
 
 | Permission | For |
 |---|---|
@@ -129,16 +129,19 @@ TwinTake needs four macOS permissions:
 | Microphone | all mic tracks |
 | Screen Recording | screen.mov and the computer sound |
 | Accessibility | snapping windows into the frame, and the on-screen keystrokes |
+| Input Monitoring (optional) | on-screen keystrokes for shortcuts other apps own, for example CleanShot X's ⇧⌘4 |
 
-1. Open the menu. The **Permissions** section opens by itself when a permission is missing.
-2. Click **Allow…** next to each permission. If macOS denied one before, click **Open Settings** and turn it on in System Settings > Privacy & Security.
+1. Open the menu. The **Permissions** section opens by itself when one of the four is missing.
+2. Click **Allow…** next to each permission. If macOS denied one before, click **Open Settings** (or the gear) and turn it on in System Settings > Privacy & Security.
 3. After you allow Screen Recording, quit and reopen TwinTake.
+
+Without Input Monitoring, everything works, and a shortcut another app owns shows only its modifiers (⇧⌘). TwinTake asks for it only when you click its **Allow…** button. If the Keystrokes row says "Quit and reopen TwinTake" after you allow it, do that.
 
 Without the microphone permission, the camera preview opens without the meters, and TwinTake does not ask for the permission until you click Allow.
 
 ## Signing (for builders)
 
-macOS ties the camera, mic, screen and Accessibility permissions to the app's code signature. If the signature changes with each build, macOS asks for the permissions again after each build.
+macOS ties the camera, mic, screen, Accessibility and Input Monitoring permissions to the app's code signature. If the signature changes with each build, macOS asks for the permissions again after each build.
 
 1. In Xcode, open Settings > Accounts and add your Apple ID.
 2. Select the account, then Manage Certificates > + > Apple Development. The certificate is free.

@@ -21,7 +21,7 @@ Status: early development. TwinTake is built for one creator's desk setup. Suppo
 - **A fixed 16:9 screen frame.** TwinTake snaps your app's window into the frame and dims the rest of the display. Parallels Desktop keeps its toolbar outside the frame.
 - **Control bar and camera window.** Start and stop, switch apps, flag a mistake, and watch yourself. Neither window is in the recording, and neither takes the focus from your app.
 - **Replay while recording.** Review the take so far, with Skip silence and Flags only, while the take goes on.
-- **Keystrokes on screen.** The shortcuts you press (⇧⌘P, or Ctrl+Shift+P in a Parallels VM) show in a pill at the bottom of the frame and in screen.mov. Typed text never shows.
+- **Keystrokes on screen.** The shortcuts you press (⇧⌘P, or Ctrl+Shift+P in a Parallels VM) show in a pill at the bottom of the frame and in screen.mov. Typed text never shows. With the optional Input Monitoring permission, shortcuts other apps own (CleanShot X's ⇧⌘4) show too.
 - **Mic and camera checks.** Live meters. Warnings when the camera records with its built-in mic or does not hear you. Checks for a capture card on USB 2 and for empty frames.
 - **Crash-safe sessions.** Both files get a movie fragment every 2 s, so a crash keeps everything up to the last fragment. The session folder format is documented for editing tools.
 
@@ -56,7 +56,7 @@ Add your Apple ID in Xcode > Settings > Accounts. Then create a free Apple Devel
 ## Quick start
 
 1. Open `build/TwinTake.app`. It lives in the menu bar (a record icon), not in the Dock.
-2. Click the icon. Under **Permissions**, allow Camera, Microphone, Screen Recording and Accessibility. Quit and reopen TwinTake after you allow Screen Recording.
+2. Click the icon. Under **Permissions**, allow Camera, Microphone, Screen Recording and Accessibility. Quit and reopen TwinTake after you allow Screen Recording. Input Monitoring is optional: it shows shortcuts other apps own in the keystroke pill.
 3. Pick **Camera**, **Screen** or **Both**. Under Camera, check the **Signal** line, for example "4K · 3840×2160 · 23.976 fps".
 4. Fix each red item in the menu. Red items block Start. Orange items are warnings.
 5. Click **Record** on the control bar, or press ⌃⌥⌘R. Click **Stop** to end the take. The take is in `~/Movies/TwinTake`.

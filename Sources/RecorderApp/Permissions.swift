@@ -5,9 +5,10 @@ import CoreGraphics
 import Observation
 import Security
 
-/// The four macOS permissions the recorder needs.
+/// The macOS permissions: the four the recorder needs, and Input Monitoring, which only adds
+/// shortcuts other apps own to the on-screen keystrokes.
 enum PermissionKind: String, CaseIterable, Identifiable, Sendable {
-    case camera, microphone, screenRecording, accessibility
+    case camera, microphone, screenRecording, accessibility, inputMonitoring
 
     var id: String { rawValue }
 
@@ -17,6 +18,7 @@ enum PermissionKind: String, CaseIterable, Identifiable, Sendable {
         case .microphone: "Microphone"
         case .screenRecording: "Screen Recording"
         case .accessibility: "Accessibility"
+        case .inputMonitoring: "Input Monitoring"
         }
     }
 
@@ -26,6 +28,7 @@ enum PermissionKind: String, CaseIterable, Identifiable, Sendable {
         case .microphone: "mic"
         case .screenRecording: "rectangle.dashed.badge.record"
         case .accessibility: "macwindow.on.rectangle"
+        case .inputMonitoring: "keyboard"
         }
     }
 
@@ -36,7 +39,19 @@ enum PermissionKind: String, CaseIterable, Identifiable, Sendable {
         case .microphone: "all mic tracks"
         case .screenRecording: "screen.mov and system audio"
         case .accessibility: "snapping the window and keystrokes"
+        case .inputMonitoring: "showing shortcuts other apps own (e.g. ⇧⌘4)"
         }
+    }
+
+    /// The recorder needs it. Input Monitoring is optional: without it everything works, and only
+    /// shortcuts other apps own show as their modifiers alone. A missing optional permission does
+    /// not open the Permissions section by itself.
+    var isRequired: Bool { self != .inputMonitoring }
+
+    /// The line under the permission's name: "For camera.mov · Allowed", or for an optional one
+    /// "Optional, for showing shortcuts other apps own (e.g. ⇧⌘4) · Not allowed".
+    func caption(_ state: PermissionState) -> String {
+        (isRequired ? "For " : "Optional, for ") + "\(purpose) · \(state.label)"
     }
 
     /// System Settings > Privacy & Security, at this permission's list.
@@ -46,6 +61,7 @@ enum PermissionKind: String, CaseIterable, Identifiable, Sendable {
         case .microphone: "Privacy_Microphone"
         case .screenRecording: "Privacy_ScreenCapture"
         case .accessibility: "Privacy_Accessibility"
+        case .inputMonitoring: "Privacy_ListenEvent"
         }
         return URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)")
     }
@@ -56,7 +72,8 @@ enum PermissionState: Sendable, Equatable {
     /// Never asked. Clicking Allow shows the macOS prompt.
     case notDetermined
     case denied
-    /// Not granted, and macOS does not say whether it asked before (Screen Recording, Accessibility).
+    /// Not granted, and macOS does not say whether it asked before (Screen Recording,
+    /// Accessibility, Input Monitoring).
     case notGranted
 
     var label: String {
@@ -90,13 +107,14 @@ final class PermissionCenter {
         if s != states { states = s }
     }
 
-    /// The four states as macOS reports them now. Never prompts.
+    /// The states as macOS reports them now. Never prompts.
     static func systemStates() -> [PermissionKind: PermissionState] {
         var s: [PermissionKind: PermissionState] = [:]
         s[.camera] = avState(.video)
         s[.microphone] = avState(.audio)
         s[.screenRecording] = CGPreflightScreenCaptureAccess() ? .granted : .notGranted
         s[.accessibility] = AXIsProcessTrusted() ? .granted : .notGranted
+        s[.inputMonitoring] = CGPreflightListenEventAccess() ? .granted : .notGranted
         return s
     }
 
@@ -110,7 +128,7 @@ final class PermissionCenter {
             } else {
                 openSettings(kind)
             }
-        case .screenRecording, .accessibility:
+        case .screenRecording, .accessibility, .inputMonitoring:
             // macOS prompts only once for these. Its prompt has its own Open System Settings button,
             // so the first click shows only the prompt and later clicks open Settings. macOS ties
             // the grant to the code signature, so a new build (new signature) may prompt again:
@@ -121,10 +139,10 @@ final class PermissionCenter {
                 break
             }
             UserDefaults.standard.set(Self.buildID, forKey: askedKey)
-            if kind == .screenRecording {
-                _ = CGRequestScreenCaptureAccess()
-            } else {
-                _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+            switch kind {
+            case .screenRecording: _ = CGRequestScreenCaptureAccess()
+            case .inputMonitoring: _ = CGRequestListenEventAccess()
+            default: _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
             }
         }
         refresh()

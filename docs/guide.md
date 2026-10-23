@@ -274,6 +274,8 @@ Like CleanShot X, TwinTake shows the shortcuts you press in a dark pill near the
 
 **What never shows:** letters, digits and other characters typed alone or with ⇧, Space alone, ⌥ or ⌥⇧ with a character on a Mac (that types –, é or @), anything while a password field (secure keyboard entry) has the keys, and TwinTake's own shortcuts (⌃⌥⌘R, ⌃⌥⌘B and the others), not even their ⌃⌥⌘ while you hold it.
 
+**Shortcuts other apps own:** some apps own a shortcut for the whole Mac, for example CleanShot X's ⇧⌘4. macOS gives that key only to the app that owns it. Without Input Monitoring, the pill then shows only **⇧⌘** while you hold the keys. With Input Monitoring, it shows **⇧⌘4**.
+
 **Where:** centered in the frame, 14% of its height above its bottom edge. The text is 34 pt in a 1504x846 pt frame and follows the frame's size (22 to 52 pt). The pill grows with its text, so the whole shortcut always shows (no "…"). The pill shows for 1.5 s after the last key, then fades. One pill at a time: a new shortcut replaces it.
 
 **Settings** (the **Keystrokes** row in the menu):
@@ -287,7 +289,13 @@ Like CleanShot X, TwinTake shows the shortcuts you press in a dark pill near the
 
 A character key shows as your keyboard layout names it, so a German or French layout reads right.
 
-**Accessibility:** TwinTake sees other apps' keys with the Accessibility permission (the same one window snapping uses). Without it, no pill shows, and the Keystrokes row says so. TwinTake never asks for another permission for keystrokes.
+**Permissions:** TwinTake sees the keys in one of two ways. A key never counts twice.
+
+- **Accessibility** (the same permission window snapping uses): every shortcut except the ones other apps own. Without Accessibility and Input Monitoring, no pill shows, and the Keystrokes row says so.
+- **Input Monitoring** (optional): every shortcut, also the ones other apps own (⇧⌘4). TwinTake listens only: it never changes or delays a key. TwinTake asks for it only when you click **Allow…** next to Input Monitoring under **Permissions**. The **gear** button opens System Settings > Privacy & Security > Input Monitoring.
+- After you allow Input Monitoring, TwinTake switches to it within a few seconds (at the next key you press). Sometimes macOS gives it to TwinTake only after a relaunch. Then keystrokes work as before, and the Keystrokes row says "Quit and reopen TwinTake". With Input Monitoring and no Accessibility, TwinTake cannot tell, so the row says "If no keystrokes show …" until the first key shows.
+- Under the Keystrokes arrow, a line says whether shortcuts other apps own show.
+- With Input Monitoring, the pill shows the keys you press. If a key remapper changes them first (a Hyper key tool, BetterTouchTool), the pill shows the keys before the change, not the keys the app gets.
 
 **Secure keyboard entry:** while an app has it on (a password field, or Terminal's Secure Keyboard Entry), macOS keeps every key from TwinTake, so no pill shows. When it stays on for a few seconds, the Keystrokes row names that app (some apps leave it on after their password field closes).
 
@@ -367,7 +375,7 @@ TwinTake saves every setting at once.
 
 **Control Bar** (in the menu): the switch shows or hides the bar. The arrow shows the pinned apps (move up, move down, remove), **Flag looks back**, and **Move Bar to the Default Place**.
 
-**Permissions** (in the menu): the four permissions and their state, with **Allow…** or **Open Settings** buttons. The section opens by itself when a permission is missing. See [setup.md](setup.md#permissions).
+**Permissions** (in the menu): the four permissions, Input Monitoring (optional) and their state, with **Allow…** or **Open Settings** buttons. The section opens by itself when one of the four is missing. See [setup.md](setup.md#permissions).
 
 **Shortcuts** (in the menu): the shortcuts and any shortcut that did not register. See [Shortcuts](#shortcuts).
 
