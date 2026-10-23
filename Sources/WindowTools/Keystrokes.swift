@@ -91,7 +91,7 @@ public enum KeystrokeFilter {
         if reserved.contains(HotKey(keyCode: UInt32(keyCode), modifiers: modifiers)) { return nil }
         let named = namedKey(keyCode: keyCode)
         guard !modifiers.isSubset(of: typingModifiers(optionTypes: optionTypes)) else {
-            // Text modifiers only: only a named key shows (⇧ Tab, ⌥←, ⌥ Delete). Space is text.
+            // Text modifiers only: only a named key shows (⇧⇥, ⌥←, ⌥⌫). Space is text.
             guard let named, named != .space else { return nil }
             return KeyCombo(modifiers: modifiers, key: named)
         }
@@ -127,7 +127,7 @@ public enum KeystrokeFilter {
 public enum KeyNameStyle: String, CaseIterable, Sendable, Identifiable {
     /// Windows names while a Parallels VM is the front app (Parallels maps ⌘ to Ctrl), else Mac symbols.
     case auto
-    /// ⇧⌘P, ⌥⌘7, Return, Esc, Tab, Delete, ← → ↑ ↓.
+    /// ⇧⌘P, ⌥⌘7, ⏎ (Return), ⎋ (Esc), ⇥ (Tab), ⌫ (Delete), ← → ↑ ↓.
     case mac
     /// Ctrl+Shift+P, Ctrl+Alt+7, Enter, Backspace.
     case windows
@@ -164,7 +164,7 @@ public enum KeystrokeNames {
         return SnapProfile.parallelsDesktop.matches(bundleID)
     }
 
-    /// "⇧⌘P", "⌘ Return", "Esc" (Mac), or "Ctrl+Shift+P", "Ctrl+Enter", "Esc" (Windows).
+    /// "⇧⌘P", "⌘⏎", "⎋", "⌘ Space" (Mac), or "Ctrl+Shift+P", "Ctrl+Enter", "Esc" (Windows).
     public static func label(_ combo: KeyCombo, windows: Bool) -> String {
         if windows {
             return (windowsModifierNames(combo.modifiers) + [windowsName(combo.key)]).joined(separator: "+")
@@ -172,7 +172,8 @@ public enum KeystrokeNames {
         let symbols = combo.modifiers.symbols
         let key = macName(combo.key)
         if symbols.isEmpty { return key }
-        // A one-character key joins the symbols ("⇧⌘P"); a word gets a space ("⌘ Return").
+        // A one-character key or symbol joins the modifiers ("⇧⌘P", "⌘⏎", "⇧⇥"); a word gets a
+        // space ("⌘ Space", "⌥ F4", "⌥ Page Up").
         return key.count == 1 ? symbols + key : symbols + " " + key
     }
 
@@ -197,15 +198,47 @@ public enum KeystrokeNames {
         return names
     }
 
+    /// The Mac keyboard symbols, like the modifiers: ⏎ Return, ⌅ keypad Enter, ⇥ Tab, ⎋ Esc,
+    /// ⌫ Delete, ⌦ Forward Delete, ↖ Home, ↘ End, the arrows. Space, Page Up, Page Down and the
+    /// F keys keep their names.
+    ///
+    /// Every symbol is one the system font (SF) draws in its own design, so a pill like "⌘⏎" is
+    /// one typeface and one weight. SF has no ↩, ⌤, ⇞ or ⇟ (they came from Lucida Grande, and ⌤
+    /// drew half height near the top of the line), so Return is ⏎ (RETURN SYMBOL) and keypad
+    /// Enter ⌅. SF has no ⇥ either: the pill draws it as the matching SF Symbol
+    /// (`KeystrokePillView.symbolImages`). No SF glyph or SF Symbol is ⇞ or ⇟, so Page Up and
+    /// Page Down are words.
     static func macName(_ key: KeystrokeKey) -> String {
         switch key {
-        case .returnKey: "Return"
-        case .enter: "Enter"
+        case .returnKey: "⏎"
+        case .enter: "⌅"
+        case .tab: "⇥"
+        case .space: "Space"
+        case .escape: "⎋"
+        case .delete: "⌫"
+        case .forwardDelete: "⌦"
+        case .left: "←"
+        case .right: "→"
+        case .up: "↑"
+        case .down: "↓"
+        case .pageUp: "Page Up"
+        case .pageDown: "Page Down"
+        case .home: "↖"
+        case .end: "↘"
+        case let .function(n): "F\(n)"
+        case let .character(c): c
+        }
+    }
+
+    /// The names on a PC keyboard: words, except the arrows.
+    static func windowsName(_ key: KeystrokeKey) -> String {
+        switch key {
+        case .returnKey, .enter: "Enter"
         case .tab: "Tab"
         case .space: "Space"
         case .escape: "Esc"
-        case .delete: "Delete"
-        case .forwardDelete: "⌦"
+        case .delete: "Backspace"
+        case .forwardDelete: "Delete"
         case .left: "←"
         case .right: "→"
         case .up: "↑"
@@ -216,15 +249,6 @@ public enum KeystrokeNames {
         case .end: "End"
         case let .function(n): "F\(n)"
         case let .character(c): c
-        }
-    }
-
-    static func windowsName(_ key: KeystrokeKey) -> String {
-        switch key {
-        case .returnKey, .enter: "Enter"
-        case .delete: "Backspace"
-        case .forwardDelete: "Delete"
-        default: macName(key)
         }
     }
 }
@@ -398,16 +422,18 @@ public struct KeystrokeTracker: Sendable {
     }
 }
 
-/// Where the pill sits: centered left to right in the recording frame, its center 14% of the
-/// frame's height above the frame's bottom edge (CleanShot X's place), at a size that follows the
-/// frame (28 pt type in the 1504x846 pt frame). Global CG points (top-left origin).
+/// Where the pill sits and how big it is: centered left to right in the recording frame, its
+/// center 14% of the frame's height above the frame's bottom edge (CleanShot X's place), at a size
+/// that follows the frame (34 pt type in the 1504x846 pt frame). Global CG points (top-left origin).
 public enum KeystrokePlacement {
     /// The pill's center, as a part of the frame height above the frame's bottom edge.
     public static let raiseFraction: CGFloat = 0.14
-    /// 28 pt type in an 846 pt tall frame.
-    public static let referenceFontSize: CGFloat = 28
+    /// 34 pt type in an 846 pt tall frame.
+    public static let referenceFontSize: CGFloat = 34
     public static let referenceFrameHeight: CGFloat = 846
-    public static let fontSizeRange: ClosedRange<CGFloat> = 18...44
+    public static let fontSizeRange: ClosedRange<CGFloat> = 22...52
+    /// The smallest type a pill shrinks to so its whole text fits a tiny frame.
+    public static let minimumFittedFontSize: CGFloat = 6
 
     /// The type size for a frame `frameHeight` points tall.
     public static func fontSize(frameHeight: CGFloat) -> CGFloat {
@@ -430,6 +456,45 @@ public enum KeystrokePlacement {
         return CGRect(x: f.minX, y: y, width: f.width, height: height)
     }
 
-    /// The pill's corner radius for a type size: 12 pt at 28 pt.
-    public static func cornerRadius(fontSize: CGFloat) -> CGFloat { (12 * fontSize / referenceFontSize).rounded() }
+    /// The pill's corner radius for a type size: 3/7 of it (15 pt at 34 pt, CleanShot X's 12 pt
+    /// at 28 pt).
+    public static func cornerRadius(fontSize: CGFloat) -> CGFloat { (fontSize * 3 / 7).rounded() }
+
+    /// The room between the pill's edge and its text: 0.6 of the type size left and right, 0.3
+    /// above and below.
+    public static func padding(fontSize: CGFloat) -> CGSize {
+        CGSize(width: (fontSize * 0.6).rounded(), height: (fontSize * 0.3).rounded())
+    }
+
+    /// The pill for text `textSize` points big (its typographic size at `fontSize`): the whole
+    /// text in whole points plus the padding on each side, never narrower than tall.
+    public static func pillSize(textSize: CGSize, fontSize: CGFloat) -> CGSize {
+        let pad = padding(fontSize: fontSize)
+        let height = textSize.height.rounded(.up) + 2 * pad.height
+        return CGSize(width: max(height, textSize.width.rounded(.up) + 2 * pad.width), height: height)
+    }
+
+    /// The type size and pill size that show the whole text in a window `bounds` big: `fontSize`
+    /// when its pill fits, else the largest whole type size whose pill fits (down to
+    /// `minimumFittedFontSize`). The text is never cut: a pill too big for its window gets
+    /// smaller type, not fewer characters.
+    /// - Parameter measure: the text's typographic size at a type size.
+    public static func fittedPill(fontSize: CGFloat, in bounds: CGSize,
+                                  measure: (CGFloat) -> CGSize) -> (fontSize: CGFloat, size: CGSize) {
+        func pill(_ size: CGFloat) -> CGSize { pillSize(textSize: measure(size), fontSize: size) }
+        func fits(_ p: CGSize) -> Bool { p.width <= bounds.width && p.height <= bounds.height }
+        var size = fontSize
+        var p = pill(size)
+        guard !fits(p), p.width > 0, p.height > 0 else { return (size, p) }
+        // The text and its padding follow the type size: start from the scaled size, then step
+        // down whole points for the rounding.
+        let scale = min(bounds.width / p.width, bounds.height / p.height)
+        size = max(minimumFittedFontSize, min(fontSize - 1, (fontSize * scale).rounded(.down)))
+        p = pill(size)
+        while !fits(p), size > minimumFittedFontSize {
+            size -= 1
+            p = pill(size)
+        }
+        return (size, p)
+    }
 }

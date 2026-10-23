@@ -1,5 +1,7 @@
+import AppKit
 import Carbon.HIToolbox
 import CoreGraphics
+import CoreText
 import Testing
 @testable import WindowTools
 
@@ -51,7 +53,7 @@ private func combo(_ keyCode: Int, _ modifiers: HotKey.Modifiers, _ character: S
 
     /// On a Mac, ⌥ and ⌥⇧ with a character or Space type text (–, —, é, ©, and @ [ ] { } on
     /// German or French layouts): never shown, the layout not even read. ⌥ with a named key is a
-    /// shortcut (⌥←, ⌥ Delete). In a Windows VM ⌥ is Alt, so Alt with a character shows.
+    /// shortcut (⌥←, ⌥⌫). In a Windows VM ⌥ is Alt, so Alt with a character shows.
     @Test func optionWithACharacterIsTypingOnAMac() {
         for (code, char) in [(kVK_ANSI_Minus, "-"), (kVK_ANSI_E, "e"), (kVK_ANSI_L, "l"), (kVK_ANSI_5, "5")] {
             for modifiers in [HotKey.Modifiers([.option]), [.option, .shift]] {
@@ -147,20 +149,37 @@ private func combo(_ keyCode: Int, _ modifiers: HotKey.Modifiers, _ character: S
         #expect(mac(c(shiftCmd, .character("P"))) == "⇧⌘P")
         #expect(mac(c([.command, .option], .character("7"))) == "⌥⌘7")
         #expect(mac(c([.control, .option, .shift, .command], .character("K"))) == "⌃⌥⇧⌘K")
-        #expect(mac(c([], .returnKey)) == "Return")
-        #expect(mac(c(cmd, .returnKey)) == "⌘ Return")
-        #expect(mac(c([], .escape)) == "Esc")
-        #expect(mac(c([.shift], .tab)) == "⇧ Tab")
-        #expect(mac(c([], .delete)) == "Delete")
-        #expect(mac(c([.option], .delete)) == "⌥ Delete")
+        #expect(mac(c([.control, .option, .shift, .command], .character("4"))) == "⌃⌥⇧⌘4")
+        #expect(mac(c(shiftCmd, .character("4"))) == "⇧⌘4")
         #expect(mac(c(cmd, .left)) == "⌘←")
         #expect(mac(c([], .right)) == "→")
         #expect(mac(c([], .up)) == "↑")
         #expect(mac(c([.shift], .down)) == "⇧↓")
-        #expect(mac(c([], .forwardDelete)) == "⌦")
         #expect(mac(c([], .function(5))) == "F5")
+        #expect(mac(c([.option], .function(4))) == "⌥ F4")
         #expect(mac(c(cmd, .space)) == "⌘ Space")
-        #expect(mac(c([], .pageDown)) == "Page Down")
+    }
+
+    /// Luke: "to be consistent when I press return or enter maybe we also use shortcut symbols".
+    /// Named keys read as the Mac keyboard symbols the system font draws, joined to the modifiers
+    /// with no space. Page Up and Page Down have no SF symbol: they are words, like Space.
+    @Test func namedKeysUseMacSymbols() {
+        let symbols: [(KeystrokeKey, String)] = [
+            (.returnKey, "⏎"), (.enter, "⌅"), (.delete, "⌫"), (.forwardDelete, "⌦"), (.escape, "⎋"), (.tab, "⇥"),
+            (.left, "←"), (.right, "→"), (.up, "↑"), (.down, "↓"), (.home, "↖"), (.end, "↘"),
+        ]
+        for (key, symbol) in symbols {
+            #expect(mac(c([], key)) == symbol, "\(key)")
+            #expect(mac(c(cmd, key)) == "⌘" + symbol, "\(key)")
+        }
+        #expect(mac(c(cmd, .returnKey)) == "⌘⏎")
+        #expect(mac(c([.shift], .tab)) == "⇧⇥")
+        #expect(mac(c([.option], .delete)) == "⌥⌫")
+        #expect(mac(c([.control, .option, .shift, .command], .returnKey)) == "⌃⌥⇧⌘⏎")
+        #expect(mac(c([], .pageUp)) == "Page Up")
+        #expect(mac(c([.option], .pageDown)) == "⌥ Page Down")
+        #expect(KeystrokeNames.pillText(.init(combo: c([], .returnKey), modifiers: [], count: 4), windows: false) == "⏎ ×4")
+        #expect(KeystrokeNames.pillText(.init(combo: c([], .delete), modifiers: [], count: 2), windows: false) == "⌫ ×2")
     }
 
     @Test func windowsNames() {
@@ -175,9 +194,17 @@ private func combo(_ keyCode: Int, _ modifiers: HotKey.Modifiers, _ character: S
         #expect(win(c([], .forwardDelete)) == "Delete")
         #expect(win(c([.control, .option], .forwardDelete)) == "Ctrl+Alt+Delete")
         #expect(win(c([.shift], .tab)) == "Shift+Tab")
+        #expect(win(c([], .tab)) == "Tab")
         #expect(win(c([], .escape)) == "Esc")
+        #expect(win(c(cmd, .returnKey)) == "Ctrl+Enter")
+        #expect(win(c([.control, .shift], .delete)) == "Ctrl+Shift+Backspace")
+        #expect(win(c(cmd, .space)) == "Ctrl+Space")
         #expect(win(c(cmd, .left)) == "Ctrl+←")
         #expect(win(c([.option], .function(4))) == "Alt+F4")
+        #expect(win(c([], .pageUp)) == "Page Up")
+        #expect(win(c([], .pageDown)) == "Page Down")
+        #expect(win(c([.shift], .home)) == "Shift+Home")
+        #expect(win(c([.shift], .end)) == "Shift+End")
     }
 
     @Test func modifiersOnly() {
@@ -342,6 +369,51 @@ private func combo(_ keyCode: Int, _ modifiers: HotKey.Modifiers, _ character: S
         #expect(s4 == .show && vm.pill?.modifiers == [.option])
     }
 
+    /// Luke: "shift is popping up when pressed". ⇧ down and up alone shows nothing, however long
+    /// it is held, and leaves nothing to tick; ⇧ during a combo's pill keeps that pill. ⇧ with ⌘
+    /// shows ⇧⌘ after the delay (the pill for it is checked in `KeystrokePillTests`).
+    @Test func shiftAloneShowsNothing() {
+        var t = KeystrokeTracker(hiddenModifierSets: [hotKeyModifiers])
+        t.modifiersChanged([.shift], at: 0)
+        #expect(t.pending == nil && t.pill == nil && !t.needsTicks && !t.followsHeldModifiers)
+        for i in 1...60 {
+            let tick = t.tick(at: Double(i) * 0.05)
+            #expect(tick == .none && t.pill == nil && t.phase == .hidden)
+        }
+        t.modifiersChanged([], at: 3.1)
+        #expect(t.pill == nil && t.phase == .hidden && !t.needsTicks)
+        // ⇧ pressed while ⌘Z shows: ⌘Z stays and keeps its time.
+        t.press(undo, isRepeat: false, at: 4)
+        t.modifiersChanged([], at: 4.1)
+        t.modifiersChanged([.shift], at: 4.5)
+        let kept = t.tick(at: 4.5 + delay)
+        #expect(kept == .none && t.pill?.combo == undo && t.pending == nil)
+        #expect(abs((t.fadeAt ?? 0) - (4 + KeystrokeTracker.visibleS)) < 1e-9)
+        // ⌘ released before ⇧ from a ⇧⌘ pill: it lingers as ⇧⌘, never as ⇧.
+        var u = KeystrokeTracker()
+        u.modifiersChanged(shiftCmd, at: 0)
+        let shown = u.tick(at: delay)
+        #expect(shown == .show && u.pill?.modifiers == shiftCmd)
+        #expect(KeystrokeNames.pillText(u.pill!, windows: false) == "⇧⌘")
+        u.modifiersChanged([.shift], at: 1)
+        #expect(u.pill?.modifiers == shiftCmd && u.fadeAt == 1 + KeystrokeTracker.modifiersLingerS)
+    }
+
+    /// ⇧⌘4 (a macOS screenshot): ⇧⌘ shows while held, then ⇧⌘4 when the key event comes. TwinTake
+    /// does not drop it (only its own hotkeys are reserved).
+    @Test func screenshotShortcutsShow() {
+        for code in [kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5] {
+            let digit = String(code == kVK_ANSI_3 ? 3 : code == kVK_ANSI_4 ? 4 : 5)
+            let shot = combo(code, shiftCmd, digit, reserved: [.startStop, .flag])
+            #expect(shot == KeyCombo(modifiers: shiftCmd, key: .character(digit)))
+            var t = KeystrokeTracker(hiddenModifierSets: [hotKeyModifiers])
+            t.modifiersChanged(shiftCmd, at: 0)
+            _ = t.tick(at: delay)
+            if let shot { t.press(shot, isRepeat: false, at: 0.5) }
+            #expect(t.pill.map { KeystrokeNames.pillText($0, windows: false) } == "⇧⌘" + digit)
+        }
+    }
+
     /// New modifiers held while a combo shows replace it once they show, unless the combo holds them.
     @Test func newModifiersReplaceTheCombo() {
         var t = KeystrokeTracker()
@@ -433,15 +505,47 @@ private func combo(_ keyCode: Int, _ modifiers: HotKey.Modifiers, _ character: S
         #expect(rect.minX == laptopFrame.minX && rect.width == laptopFrame.width)
         #expect(abs(rect.midY - center.y) < 0.001)
         #expect(laptopFrame.contains(rect))
-        #expect(rect.height == 84)  // 3 x 28 pt.
+        #expect(rect.height == 102)  // 3 x 34 pt.
     }
 
+    /// Luke: "can we make text also slightly bigger". 34 pt in the laptop frame (was 28).
     @Test func sizeFollowsTheFrame() {
-        #expect(KeystrokePlacement.fontSize(frameHeight: 846) == 28)
-        #expect(KeystrokePlacement.fontSize(frameHeight: 1080) == 36)  // A whole 4K display at 1920x1080 pt.
-        #expect(KeystrokePlacement.fontSize(frameHeight: 200) == 18)
-        #expect(KeystrokePlacement.fontSize(frameHeight: 5000) == 44)
+        #expect(KeystrokePlacement.fontSize(frameHeight: 846) == 34)
+        #expect(KeystrokePlacement.fontSize(frameHeight: 1080) == 43)  // A whole 4K display at 1920x1080 pt.
+        #expect(KeystrokePlacement.fontSize(frameHeight: 200) == 22)
+        #expect(KeystrokePlacement.fontSize(frameHeight: 5000) == 52)
+        #expect(KeystrokePlacement.cornerRadius(fontSize: 34) == 15)
         #expect(KeystrokePlacement.cornerRadius(fontSize: 28) == 12)
+        #expect(KeystrokePlacement.padding(fontSize: 34) == CGSize(width: 20, height: 10))
+    }
+
+    /// The pill holds the whole text, rounded up, plus its padding; never narrower than tall.
+    @Test func pillSizeHoldsTheWholeText() {
+        let size = KeystrokePlacement.pillSize(textSize: CGSize(width: 72.2, height: 40.6), fontSize: 34)
+        #expect(size == CGSize(width: 73 + 40, height: 41 + 20))
+        let narrow = KeystrokePlacement.pillSize(textSize: CGSize(width: 12, height: 40.6), fontSize: 34)
+        #expect(narrow == CGSize(width: 61, height: 61))
+    }
+
+    /// A pill that fits keeps the frame's type size; one too wide for its window gets smaller type
+    /// (the largest whole size that fits), never fewer characters.
+    @Test func aPillTooWideShrinksItsType() {
+        // A stand-in font: 0.6 pt wide per point of type per character, 1.2 lines.
+        func measure(_ characters: Int) -> (CGFloat) -> CGSize {
+            { CGSize(width: 0.6 * $0 * CGFloat(characters), height: 1.2 * $0) }
+        }
+        let room = CGSize(width: 1504, height: 102)
+        let fits = KeystrokePlacement.fittedPill(fontSize: 34, in: room, measure: measure(10))
+        #expect(fits.fontSize == 34 && fits.size == KeystrokePlacement.pillSize(textSize: measure(10)(34), fontSize: 34))
+        let small = CGSize(width: 300, height: 66)
+        let shrunk = KeystrokePlacement.fittedPill(fontSize: 22, in: small, measure: measure(30))
+        #expect(shrunk.fontSize < 22)
+        #expect(shrunk.size.width <= small.width && shrunk.size.height <= small.height)
+        let oneUp = KeystrokePlacement.pillSize(textSize: measure(30)(shrunk.fontSize + 1), fontSize: shrunk.fontSize + 1)
+        #expect(oneUp.width > small.width || oneUp.height > small.height)  // The largest size that fits.
+        // No room at all: the smallest type, and no endless loop.
+        let none = KeystrokePlacement.fittedPill(fontSize: 22, in: CGSize(width: 10, height: 10), measure: measure(30))
+        #expect(none.fontSize == KeystrokePlacement.minimumFittedFontSize)
     }
 
     /// On a display above or left of the main one (negative global coordinates), and a tiny frame.
@@ -452,5 +556,176 @@ private func combo(_ keyCode: Int, _ modifiers: HotKey.Modifiers, _ character: S
         #expect(abs(rect.midY - (0 - 0.14 * 1080)) < 0.001)
         let tiny = CGRect(x: 0, y: 0, width: 160, height: 40)
         #expect(tiny.contains(KeystrokePlacement.windowRect(frameGlobal: tiny)))
+    }
+}
+
+/// The pill laid out and drawn offscreen (no window on screen, no permission): Luke's take
+/// showed "⇧…P", "R…urn", "Del…e ×2" and "…" for ⇧⌘. Every label now draws whole.
+@MainActor @Suite struct KeystrokePillTests {
+    static let labels = ["⇧⌘P", "⇧⌘", "⌃⌥⇧⌘4", "⇧⌘4", "⌘⏎ ×12", "⏎ ×4", "⌫ ×2", "⇧⇥ ×3", "Ctrl+Shift+Backspace ×3",
+                         "Ctrl+Alt+Shift+Page Down ×12", "⌘ Space", "W", "⌥ F4"]
+    /// The laptop frame, a whole 4K display (1920x1080 pt), a small frame and the largest type.
+    static let frames = [CGRect(x: 4, y: 136, width: 1504, height: 846), CGRect(x: 0, y: 0, width: 1920, height: 1080),
+                         CGRect(x: 0, y: 0, width: 800, height: 450), CGRect(x: 0, y: 0, width: 3840, height: 2160)]
+
+    /// A pill laid out as the HUD does: in a window strip of `windowRect`'s size.
+    private func pill(_ text: String, frame: CGRect) -> (KeystrokePillView, CGRect) {
+        let window = KeystrokePlacement.windowRect(frameGlobal: frame)
+        let bounds = CGRect(origin: .zero, size: window.size)
+        let pill = KeystrokePillView(frame: .zero)
+        pill.fontSize = KeystrokePlacement.fontSize(frameHeight: frame.height)
+        pill.text = text
+        pill.layoutPill(in: bounds)
+        return (pill, bounds)
+    }
+
+    @Test func everyLabelGetsItsWholeWidth() {
+        for frame in Self.frames {
+            let fontSize = KeystrokePlacement.fontSize(frameHeight: frame.height)
+            for text in Self.labels {
+                let (pill, bounds) = pill(text, frame: frame)
+                let needed = KeystrokePillView.textSize(text, fontSize: fontSize)
+                let what = "\(text) at \(fontSize) pt"
+                #expect(pill.drawnFontSize == fontSize, "\(what): the type stays")
+                #expect(pill.textRect.width >= needed.width && pill.textRect.height >= needed.height, "\(what)")
+                let pad = KeystrokePlacement.padding(fontSize: fontSize)
+                #expect(pill.textRect.minX >= pad.width - 0.5 && pill.textRect.maxX <= pill.bounds.width - pad.width + 0.5,
+                        "\(what): \(pill.textRect) in \(pill.bounds)")
+                #expect(pill.textRect.minY >= 0 && pill.textRect.maxY <= pill.bounds.height, "\(what)")
+                #expect(bounds.contains(pill.frame), "\(what): \(pill.frame) in \(bounds)")
+                #expect(abs(pill.frame.midX - bounds.midX) <= 0.5 && abs(pill.frame.midY - bounds.midY) <= 0.5, "\(what)")
+            }
+        }
+    }
+
+    /// The pill follows its text as it changes in place: held modifiers, the combo, the count.
+    @Test func thePillResizesWithItsText() {
+        let frame = Self.frames[0]
+        let (pill, bounds) = pill("⇧⌘", frame: frame)
+        var widths: [CGFloat] = [pill.frame.width]
+        for text in ["⇧⌘P", "⇧⌘P ×2", "⇧⌘P ×12", "⌘"] {
+            pill.text = text
+            pill.layoutPill(in: bounds)
+            #expect(pill.textRect.width >= KeystrokePillView.textSize(text, fontSize: 34).width, "\(text)")
+            #expect(abs(pill.frame.midX - bounds.midX) <= 0.5, "\(text)")
+            widths.append(pill.frame.width)
+        }
+        #expect(widths[0] < widths[1] && widths[1] < widths[2] && widths[2] < widths[3] && widths[4] < widths[1])
+    }
+
+    /// Drawn offscreen, the pill shows exactly the ink of its whole text: the same width as the
+    /// text drawn alone with no limit (a cut text with "…" is narrower), inside the padding, and
+    /// centered up and down.
+    @Test func thePillDrawsTheWholeText() throws {
+        for text in ["⇧⌘P", "⇧⌘", "⏎ ×4", "⌫ ×2", "⌘⇥", "⌃⌥⇧⌘4", "Ctrl+Shift+Backspace ×3"] {
+            let (pill, _) = pill(text, frame: Self.frames[0])
+            let drawn = try #require(Self.inkBounds(Self.render(pill)), "\(text)")
+            let alone = try #require(Self.inkBounds(Self.renderAlone(text, fontSize: pill.drawnFontSize)), "\(text)")
+            #expect(abs(drawn.width - alone.width) <= 1, "\(text): \(drawn.width) px drawn, \(alone.width) px whole")
+            let pad = KeystrokePlacement.padding(fontSize: pill.drawnFontSize).width * Self.scale
+            let size = CGSize(width: pill.bounds.width * Self.scale, height: pill.bounds.height * Self.scale)
+            #expect(drawn.minX >= pad * 0.75 && drawn.maxX <= size.width - pad * 0.75, "\(text): \(drawn) in \(size)")
+            #expect(drawn.minY > 0 && drawn.maxY < size.height, "\(text): \(drawn) in \(size)")
+            #expect(abs(drawn.midY - size.height / 2) <= 0.2 * pill.drawnFontSize * Self.scale, "\(text): \(drawn) in \(size)")
+        }
+    }
+
+    /// In a frame too small for a long label, the type shrinks and the text stays whole.
+    @Test func aTinyFrameShrinksTheTypeNotTheText() {
+        let tiny = CGRect(x: 0, y: 0, width: 320, height: 180)
+        let text = "Ctrl+Alt+Shift+Page Down ×12"
+        let (pill, bounds) = pill(text, frame: tiny)
+        #expect(pill.drawnFontSize < KeystrokePlacement.fontSize(frameHeight: tiny.height))
+        #expect(pill.textRect.width >= KeystrokePillView.textSize(text, fontSize: pill.drawnFontSize).width)
+        #expect(bounds.contains(pill.frame) && pill.textRect.maxX <= pill.bounds.width)
+    }
+
+    /// Every key name the Mac style can show draws in the system font's own design: a glyph of
+    /// the font itself (no fallback to Lucida Grande or another font), or a symbol the pill draws
+    /// as an SF Symbol. Before, ↩ ⇥ ⌤ ⇞ ⇟ fell back to Lucida Grande, and ⌤ drew at half height.
+    @Test func everyMacKeyNameDrawsInTheSystemFont() throws {
+        let font = NSFont.systemFont(ofSize: 34, weight: .semibold) as CTFont
+        let fontName = CTFontCopyPostScriptName(font) as String
+        let keys: [KeystrokeKey] = [.returnKey, .enter, .tab, .space, .escape, .delete, .forwardDelete, .left, .right,
+                                    .up, .down, .pageUp, .pageDown, .home, .end, .function(20), .character("P")]
+        let modifiers: HotKey.Modifiers = [.control, .option, .shift, .command]
+        var texts = keys.map { KeystrokeNames.macName($0) }
+        texts.append(KeystrokeNames.pillText(.init(combo: KeyCombo(modifiers: modifiers, key: .returnKey), modifiers: modifiers,
+                                                   count: 12), windows: false))
+        for text in texts {
+            for character in text {
+                if let name = KeystrokePillView.symbolImages[character] {
+                    #expect(KeystrokePillView.symbolImage(name, fontSize: 34) != nil, "\(character): SF Symbol \(name)")
+                    continue
+                }
+                let string = String(character) as NSString
+                let used = CTFontCreateForString(font, string as CFString, CFRange(location: 0, length: string.length))
+                let usedName = CTFontCopyPostScriptName(used) as String
+                #expect(usedName == fontName, "\(character) in \(text)")
+            }
+        }
+    }
+
+    /// The key symbols sit on the baseline at the font's size, like ⌘: ⏎ as tall as ⌘, and ⇥ (an
+    /// SF Symbol) with the same ink top and bottom as the font's →.
+    @Test func keySymbolsMatchTheModifiers() throws {
+        func ink(_ text: String) throws -> CGRect {
+            try #require(Self.inkBounds(Self.renderAlone(text, fontSize: 34)), "\(text)")
+        }
+        let command = try ink("⌘"), arrow = try ink("→")
+        let tab = try ink("⇥"), returnKey = try ink("⏎"), enter = try ink("⌅")
+        #expect(abs(tab.minY - arrow.minY) <= 1 && abs(tab.maxY - arrow.maxY) <= 1, "⇥ \(tab), → \(arrow)")
+        #expect(abs(returnKey.maxY - command.maxY) <= 1.5 && abs(returnKey.height - command.height) <= 2,
+                "⏎ \(returnKey), ⌘ \(command)")
+        // ⌅ is a caret under a bar, like ⌃: its top at the cap height, like ⌘'s.
+        #expect(abs(enter.minY - command.minY) <= 1.5 && enter.height >= 0.6 * command.height, "⌅ \(enter), ⌘ \(command)")
+        // ⇥ joins ⌘ in one pill at the same baseline.
+        let both = try ink("⌘⇥")
+        #expect(abs(both.maxY - command.maxY) <= 1.5 && both.width > command.width + tab.width, "⌘⇥ \(both)")
+    }
+
+    static let scale: CGFloat = 2
+
+    /// `view` drawn at 2x with `cacheDisplay` (reads no screen pixel).
+    static func render(_ view: NSView) -> NSBitmapImageRep {
+        let rep = bitmap(view.bounds.size)
+        view.cacheDisplay(in: view.bounds, to: rep)
+        return rep
+    }
+
+    /// `text` drawn alone at a point as the pill draws it, white on clear, with room to spare.
+    static func renderAlone(_ text: String, fontSize: CGFloat) -> NSBitmapImageRep {
+        let string = KeystrokePillView.drawnString(text, fontSize: fontSize)
+        let size = string.size()
+        let rep = bitmap(CGSize(width: size.width + 200, height: size.height + 40))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        string.draw(at: NSPoint(x: 100, y: 20))
+        NSGraphicsContext.restoreGraphicsState()
+        return rep
+    }
+
+    static func bitmap(_ size: CGSize) -> NSBitmapImageRep {
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int((size.width * scale).rounded(.up)),
+                                   pixelsHigh: Int((size.height * scale).rounded(.up)), bitsPerSample: 8, samplesPerPixel: 4,
+                                   hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        rep.size = size
+        return rep
+    }
+
+    /// The pixels of the white text (bright and mostly opaque; the pill's fill is #1E1E1E), in
+    /// pixel rows from the top.
+    static func inkBounds(_ rep: NSBitmapImageRep) -> CGRect? {
+        var minX = Int.max, minY = Int.max, maxX = -1, maxY = -1
+        for y in 0..<rep.pixelsHigh {
+            for x in 0..<rep.pixelsWide {
+                var p = [Int](repeating: 0, count: 4)
+                rep.getPixel(&p, atX: x, y: y)
+                guard p[0] > 128, p[3] > 128 else { continue }
+                minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
+            }
+        }
+        guard maxX >= 0 else { return nil }
+        return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
     }
 }

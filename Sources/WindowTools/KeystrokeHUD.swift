@@ -132,54 +132,112 @@ private final class KeystrokePanel: NSPanel {
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 }
 
-/// The pill: near-black at 90% (#1E1E1E), rounded, white semibold text. Lays itself out
-/// centered in its window.
-private final class KeystrokePillView: NSView {
+/// The pill: near-black at 90% (#1E1E1E), rounded, white semibold text. It draws its text itself
+/// (no text field, so nothing can cut it to "…"), sized to the whole text each time the text
+/// changes, and lays itself out centered in its window. All of it is in the system font's design:
+/// its glyphs, and for a key symbol it lacks (⇥) the matching SF Symbol (`symbolImages`).
+///
+/// A label field sized from its `intrinsicContentSize` truncated the text in the middle ("⇧…P",
+/// "R…urn", "…" for ⇧⌘): the field draws inside a 2 pt inset on each side that its intrinsic width
+/// leaves out.
+final class KeystrokePillView: NSView {
     static let fill = NSColor(srgbRed: 0x1E / 255.0, green: 0x1E / 255.0, blue: 0x1E / 255.0, alpha: 0.9)
 
-    private let label = NSTextField(labelWithString: "")
-    var fontSize: CGFloat = KeystrokePlacement.referenceFontSize {
-        didSet { applyStyle() }
-    }
-    var text: String = "" {
-        didSet { label.stringValue = text }
-    }
+    /// The type size for the frame (`KeystrokePlacement.fontSize`).
+    var fontSize: CGFloat = KeystrokePlacement.referenceFontSize
+    var text: String = ""
+    /// The type size the text draws at: `fontSize`, or smaller when the pill would not fit its
+    /// window (`KeystrokePlacement.fittedPill`).
+    private(set) var drawnFontSize: CGFloat = KeystrokePlacement.referenceFontSize
+    /// Where the text draws, in the pill's (flipped) coordinates: its whole typographic size.
+    private(set) var textRect: CGRect = .zero
+    private var drawnText = NSAttributedString()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.backgroundColor = Self.fill.cgColor
-        label.textColor = .white
-        label.alignment = .center
-        label.lineBreakMode = .byTruncatingMiddle
-        label.maximumNumberOfLines = 1
-        label.drawsBackground = false
-        label.isBezeled = false
-        label.isEditable = false
-        label.isSelectable = false
-        addSubview(label)
-        applyStyle()
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
+    override var isFlipped: Bool { true }
+    override var isOpaque: Bool { false }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    private func applyStyle() {
-        label.font = .systemFont(ofSize: fontSize, weight: .semibold)
-        layer?.cornerRadius = KeystrokePlacement.cornerRadius(fontSize: fontSize)
+    static func attributes(fontSize: CGFloat) -> [NSAttributedString.Key: Any] {
+        [.font: NSFont.systemFont(ofSize: fontSize, weight: .semibold), .foregroundColor: NSColor.white]
     }
 
-    /// Sizes the pill to its text (up to the window's width) and centers it in `bounds`.
+    /// Key symbols the system font has no glyph for, and the SF Symbol drawn in their place. The
+    /// font's own key glyphs (⌘ ⌫ ⎋ →) are these symbols at small scale, so ⇥ drawn this way has
+    /// the size, weight and baseline of →.
+    static let symbolImages: [Character: String] = ["⇥": "arrow.right.to.line"]
+
+    /// `text` as the pill draws it: white semibold system font, and each of `symbolImages` as its
+    /// SF Symbol, white, at the type size, on the baseline. A symbol that does not load stays text.
+    static func drawnString(_ text: String, fontSize: CGFloat) -> NSAttributedString {
+        let attributes = attributes(fontSize: fontSize)
+        let result = NSMutableAttributedString()
+        var run = ""
+        func flush() {
+            guard !run.isEmpty else { return }
+            result.append(NSAttributedString(string: run, attributes: attributes))
+            run = ""
+        }
+        for character in text {
+            guard let name = symbolImages[character], let symbol = symbolImage(name, fontSize: fontSize) else {
+                run.append(character)
+                continue
+            }
+            flush()
+            let attachment = NSTextAttachment()
+            attachment.image = symbol
+            // The symbol's alignment rect is the type's cap height band: its bottom on the baseline.
+            attachment.bounds = CGRect(x: 0, y: -symbol.alignmentRect.minY, width: symbol.size.width, height: symbol.size.height)
+            let piece = NSMutableAttributedString(attachment: attachment)
+            piece.addAttributes(attributes, range: NSRange(location: 0, length: piece.length))
+            result.append(piece)
+        }
+        flush()
+        return result
+    }
+
+    /// The SF Symbol `name` at the pill's type size and weight, small scale (the scale of the
+    /// font's own key glyphs), drawn white.
+    static func symbolImage(_ name: String, fontSize: CGFloat) -> NSImage? {
+        let configuration = NSImage.SymbolConfiguration(pointSize: fontSize, weight: .semibold, scale: .small)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [.white]))
+        return NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(configuration)
+    }
+
+    /// `text`'s typographic size at `fontSize` (one line, any length), as the pill draws it.
+    static func textSize(_ text: String, fontSize: CGFloat) -> CGSize {
+        drawnString(text, fontSize: fontSize).size()
+    }
+
+    /// Sizes the pill to its whole text and centers it in `bounds`. The type gets smaller only
+    /// when the pill would not fit `bounds` (a tiny frame).
     func layoutPill(in bounds: NSRect) {
         guard bounds.width > 0, bounds.height > 0 else { return }
-        let padX = (fontSize * 0.6).rounded(), padY = (fontSize * 0.3).rounded()
-        let textSize = label.intrinsicContentSize
-        let width = min(bounds.width, (textSize.width + 2 * padX).rounded(.up))
-        let height = min(bounds.height, (textSize.height + 2 * padY).rounded(.up))
-        frame = NSRect(x: ((bounds.width - width) / 2).rounded(), y: ((bounds.height - height) / 2).rounded(),
-                       width: width, height: height)
-        label.frame = NSRect(x: padX, y: ((height - textSize.height) / 2).rounded(), width: max(0, width - 2 * padX),
-                             height: textSize.height)
+        let text = self.text
+        let fitted = KeystrokePlacement.fittedPill(fontSize: fontSize, in: bounds.size) { Self.textSize(text, fontSize: $0) }
+        let size = CGSize(width: min(bounds.width, fitted.size.width), height: min(bounds.height, fitted.size.height))
+        frame = NSRect(x: bounds.minX + ((bounds.width - size.width) / 2).rounded(),
+                       y: bounds.minY + ((bounds.height - size.height) / 2).rounded(), width: size.width, height: size.height)
+        drawnFontSize = fitted.fontSize
+        drawnText = Self.drawnString(text, fontSize: fitted.fontSize)
+        let textSize = drawnText.size()
+        textRect = CGRect(x: (size.width - textSize.width) / 2, y: (size.height - textSize.height) / 2,
+                          width: textSize.width, height: textSize.height)
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let radius = min(KeystrokePlacement.cornerRadius(fontSize: drawnFontSize), bounds.height / 2, bounds.width / 2)
+        Self.fill.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
+        // At a point, without a width: one line, never wrapped or truncated.
+        drawnText.draw(at: textRect.origin)
     }
 }

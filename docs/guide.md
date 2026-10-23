@@ -262,28 +262,28 @@ Replay shows what you just said, with the screen, while you still record.
 
 ## Keystrokes
 
-Like CleanShot X, TwinTake shows the shortcuts you press in a dark pill near the bottom of the frame, for example **⇧⌘P**, **⌥⌘7**, **Return** or **Ctrl+Shift+P**. Typed text never shows.
+Like CleanShot X, TwinTake shows the shortcuts you press in a dark pill near the bottom of the frame, for example **⇧⌘P**, **⌥⌘7**, **⏎** (Return) or **Ctrl+Shift+P**. Typed text never shows.
 
 **What shows:**
 
-- A key pressed with ⌘ or ⌃, with or without ⇧ and ⌥: **⇧⌘P**, **⌃⌥⌘K**, **⌘ Space**.
-- These keys alone or with ⇧ or ⌥: Return, Enter, Tab, Esc, Delete, Forward Delete (⌦), the arrows, Page Up, Page Down, Home, End and F1 to F19 (**⌥←**, **⌥ Delete**).
+- A key pressed with ⌘ or ⌃, with or without ⇧ and ⌥: **⇧⌘P**, **⌃⌥⌘K**, **⌘⏎**, **⌘ Space**.
+- These keys alone or with ⇧ or ⌥, as their Mac symbols: Return **⏎**, keypad Enter **⌅**, Tab **⇥**, Esc **⎋**, Delete **⌫**, Forward Delete **⌦**, the arrows **← → ↑ ↓**, Home **↖** and End **↘**. Page Up, Page Down and F1 to F20 keep their names (**⌥ Page Up**, **F5**). For example **⇧⇥**, **⌥←**, **⌥⌫**. The symbols are drawn in the same typeface and weight as ⌘ and ⇧.
 - In a Parallels Windows VM, ⌥ is Alt, so Alt with any key shows too (**Alt+F**).
-- When you hold ⌘ or ⌃ for a moment (0.2 s), the pill shows them (**⌘**, then **⇧⌘**). When the key lands, it shows the whole shortcut. A quick shortcut shows only the shortcut.
+- When you hold ⌘ or ⌃ for a moment (0.2 s), the pill shows them (**⌘**, then **⇧⌘**). ⇧ alone never shows. When the key lands, it shows the whole shortcut. A quick shortcut shows only the shortcut.
 - The same shortcut again while the pill shows counts up: **⌘Z ×3**. A held key keeps its pill on and does not count.
 
 **What never shows:** letters, digits and other characters typed alone or with ⇧, Space alone, ⌥ or ⌥⇧ with a character on a Mac (that types –, é or @), anything while a password field (secure keyboard entry) has the keys, and TwinTake's own shortcuts (⌃⌥⌘R, ⌃⌥⌘B and the others), not even their ⌃⌥⌘ while you hold it.
 
-**Where:** centered in the frame, 14% of its height above its bottom edge. The pill shows for 1.5 s after the last key, then fades. One pill at a time: a new shortcut replaces it.
+**Where:** centered in the frame, 14% of its height above its bottom edge. The text is 34 pt in a 1504x846 pt frame and follows the frame's size (22 to 52 pt). The pill grows with its text, so the whole shortcut always shows (no "…"). The pill shows for 1.5 s after the last key, then fades. One pill at a time: a new shortcut replaces it.
 
 **Settings** (the **Keystrokes** row in the menu):
 
 - **Off**, **While recording** or **Always** (the default: while TwinTake runs).
 - **Include keystrokes in screen.mov** (on by default): the pill is in the recording, like the screen under it. TwinTake's other windows are never recorded. It applies at the next Start. A take started with Keystrokes **Off** has no pill in screen.mov, also when you turn keystrokes on during it (the pill then shows on screen only).
 - **Key names:**
-  - **Auto** (the default): Windows names while a Parallels VM window is the front app, else Mac symbols. Parallels sends ⌘ to Windows as Ctrl, so ⇧⌘P in VS Code inside the VM shows **Ctrl+Shift+P**. ⌘Tab stays **⌘ Tab**: macOS switches apps.
-  - **Mac symbols:** ⇧⌘P, ⌥⌘7, Return, Esc, Tab, Delete, ← → ↑ ↓.
-  - **Windows names:** Ctrl+Shift+P, Ctrl+Alt+7, Enter, Backspace. ⌘ and ⌃ are Ctrl, ⌥ is Alt.
+  - **Auto** (the default): Windows names while a Parallels VM window is the front app, else Mac symbols. Parallels sends ⌘ to Windows as Ctrl, so ⇧⌘P in VS Code inside the VM shows **Ctrl+Shift+P**. ⌘Tab stays **⌘⇥**: macOS switches apps.
+  - **Mac symbols:** ⇧⌘P, ⌥⌘7, ⌘⏎, ⏎, ⎋, ⇥, ⌫, ← → ↑ ↓.
+  - **Windows names:** Ctrl+Shift+P, Ctrl+Alt+7, Ctrl+Enter, Enter, Esc, Tab, Backspace. ⌘ and ⌃ are Ctrl, ⌥ is Alt.
 
 A character key shows as your keyboard layout names it, so a German or French layout reads right.
 
