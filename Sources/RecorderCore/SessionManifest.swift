@@ -195,7 +195,7 @@ public struct SyncInfo: Codable, Hashable, Sendable {
 /// session.json. Written with status "recording" at start and rewritten at stop.
 /// A file that still says "recording" after the app quit needs recovery.
 public struct SessionManifest: Codable, Sendable {
-    public static let currentSchemaVersion = "1.5"
+    public static let currentSchemaVersion = "1.6"
 
     public enum Status: String, Codable, Sendable {
         case recording

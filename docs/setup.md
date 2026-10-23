@@ -128,7 +128,7 @@ TwinTake needs four macOS permissions:
 | Camera | camera.mov |
 | Microphone | all mic tracks |
 | Screen Recording | screen.mov and the computer sound |
-| Accessibility | snapping windows into the frame |
+| Accessibility | snapping windows into the frame, and the on-screen keystrokes |
 
 1. Open the menu. The **Permissions** section opens by itself when a permission is missing.
 2. Click **Allow…** next to each permission. If macOS denied one before, click **Open Settings** and turn it on in System Settings > Privacy & Security.

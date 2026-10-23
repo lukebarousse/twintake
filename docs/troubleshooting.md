@@ -130,6 +130,15 @@ A red item in the menu blocks Start. The control bar's Record button is orange, 
 - **A control bar button shows "… not in front":** macOS did not bring the app forward, so TwinTake did not move its window. Click the app once, then click its button again.
 - **"… is not installed":** the pinned app is gone. Right-click its button and remove it.
 
+## Keystrokes do not show
+
+- **Check Accessibility.** TwinTake sees other apps' keys with the Accessibility permission. The Keystrokes row in the menu says when it is off. Allow it under Permissions; the pill works within a few seconds.
+- **Check the setting.** Menu > Keystrokes is Off, or While recording while nothing records.
+- **Typing never shows.** Only shortcuts (a key with ⌘ or ⌃) and keys such as Return, Tab, Esc, Delete and the arrows show. ⌥ with a letter types on a Mac (–, é, @), so it shows only in a Parallels Windows VM, as Alt.
+- **A password field, or Terminal with Secure Keyboard Entry on:** macOS keeps the keys from every other app, so nothing shows. Turn off Terminal > Secure Keyboard Entry to show keystrokes there.
+- **No pill anywhere, and the Keystrokes row names an app with secure keyboard entry on:** that app keeps the keys (some apps leave it on after their password field closes). Click into it and out of its password field, or quit it.
+- **Not in screen.mov:** turn on Keystrokes > Include keystrokes in screen.mov, and set Keystrokes to While recording or Always, before Start.
+
 ## The take stopped by itself
 
 - **The disk had 2 GB free.** TwinTake stops both files cleanly at that point.

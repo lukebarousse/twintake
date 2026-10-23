@@ -107,6 +107,9 @@ final class RecorderSettings {
         static let replayWindowLastDisplay = "replay.lastDisplayUUID"
         static let replaySpeed = "replay.speed"
         static let replaySkipSilence = "replay.skipSilence"
+        static let keystrokes = "keystrokes.show"
+        static let keystrokesInScreen = "keystrokes.inScreenRecording"
+        static let keyNames = "keystrokes.names"
 
         /// Keys of settings that no longer exist: the camera Size and Rate pickers and the screen
         /// Rate picker (before 0.2). Removed at launch, so an old 1080p or 29.97 pick never applies.
@@ -239,6 +242,15 @@ final class RecorderSettings {
     /// The replay's Skip silence switch.
     var replaySkipSilence: Bool { didSet { defaults.set(replaySkipSilence, forKey: Key.replaySkipSilence) } }
 
+    /// On-screen keystrokes (shortcuts and named keys in a pill at the bottom of the frame): Off,
+    /// While recording, or Always while TwinTake runs (the default).
+    var keystrokeMode: KeystrokeMode { didSet { defaults.set(keystrokeMode.rawValue, forKey: Key.keystrokes) } }
+    /// The keystroke pill is in screen.mov (on by default). Applies at the next Start.
+    var keystrokesInScreen: Bool { didSet { defaults.set(keystrokesInScreen, forKey: Key.keystrokesInScreen) } }
+    /// How the pill names keys: Auto (Windows names in front of a Parallels VM), Mac symbols or
+    /// Windows names.
+    var keyNameStyle: KeyNameStyle { didSet { defaults.set(keyNameStyle.rawValue, forKey: Key.keyNames) } }
+
     /// The replay speeds.
     nonisolated static let replaySpeeds: [Double] = [1, 1.5, 2]
 
@@ -306,6 +318,9 @@ final class RecorderSettings {
         replayWindowLastDisplay = defaults.string(forKey: Key.replayWindowLastDisplay)
         replaySpeed = Self.validReplaySpeed(defaults.object(forKey: Key.replaySpeed) as? Double)
         replaySkipSilence = bool(Key.replaySkipSilence, false)
+        keystrokeMode = defaults.string(forKey: Key.keystrokes).flatMap(KeystrokeMode.init(rawValue:)) ?? .always
+        keystrokesInScreen = bool(Key.keystrokesInScreen, true)
+        keyNameStyle = defaults.string(forKey: Key.keyNames).flatMap(KeyNameStyle.init(rawValue:)) ?? .auto
     }
 
     /// A saved calibration, or nil when there is none or it is from an unknown version.

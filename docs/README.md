@@ -6,7 +6,7 @@ Back to the [project README](../README.md).
 
 | Page | Read it to |
 |---|---|
-| [User guide](guide.md) | Learn every feature: modes, devices and the Signal line, the camera window and meters, the screen frame and snapping (with Parallels Desktop), the control bar, Flag, Replay, the mic check and calibration, settings, shortcuts, and the session folder. |
+| [User guide](guide.md) | Learn every feature: modes, devices and the Signal line, the camera window and meters, the screen frame and snapping (with Parallels Desktop), the control bar, Flag, Replay, the on-screen keystrokes, the mic check and calibration, settings, shortcuts, and the session folder. |
 | [Setup](setup.md) | Set up the hardware and macOS: camera HDMI output (with the Sony a6600 as an example), the capture card on USB 3, HDMI splitters and EDID, frame position, display refresh rate, and permissions. |
 | [Troubleshooting](troubleshooting.md) | Fix a green or empty preview, a 1080p signal, mic warnings, menu bar indicators, a blocked Start, and find logs after a crash. |
 

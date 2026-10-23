@@ -35,7 +35,7 @@ enum PermissionKind: String, CaseIterable, Identifiable, Sendable {
         case .camera: "camera.mov"
         case .microphone: "all mic tracks"
         case .screenRecording: "screen.mov and system audio"
-        case .accessibility: "snapping the window"
+        case .accessibility: "snapping the window and keystrokes"
         }
     }
 

@@ -14,6 +14,7 @@ struct MenuContentView: View {
     @State private var showPermissions = false
     @State private var showOptions = false
     @State private var showControlBarSettings = false
+    @State private var showKeystrokeSettings = false
     @State private var showShortcuts = false
 
     var body: some View {
@@ -88,6 +89,7 @@ struct MenuContentView: View {
             // A mic check started from the camera window shows its countdown and meters here.
             .onChange(of: coordinator.micCheck != nil) { _, running in if running { showOptions = true } }
             ControlBarSettingsRow(coordinator: coordinator, isExpanded: $showControlBarSettings)
+            KeystrokeSettingsRow(coordinator: coordinator, isExpanded: $showKeystrokeSettings)
             DisclosureGroup(isExpanded: $showShortcuts) {
                 ShortcutsPanel(errors: coordinator.hotKeyErrors).padding(.top, 4)
             } label: {
@@ -106,6 +108,8 @@ struct MenuContentView: View {
         .onChange(of: settings.fingerprint) { coordinator.settingsChanged() }
         .onChange(of: settings.dimOutsideFrame) { coordinator.settingsChanged() }
         .onChange(of: settings.showCameraPreview) { coordinator.settingsChanged() }
+        .onChange(of: settings.keystrokeMode) { coordinator.updateKeystrokes() }
+        .onChange(of: settings.keystrokesInScreen) { coordinator.updateKeystrokes() }
     }
 
     private var header: some View {
@@ -860,6 +864,63 @@ private struct ControlBarSettingsPanel: View {
                 .controlSize(.small)
                 .help("The strip above the frame on the recording display, else under the menu bar. "
                       + "Drag the bar anywhere; it remembers its place on each display.")
+        }
+    }
+}
+
+/// "Keystrokes": when the pill shows (visible with the section closed), and under the arrow
+/// whether it is in screen.mov and how it names keys.
+private struct KeystrokeSettingsRow: View {
+    @Bindable var coordinator: SessionCoordinator
+    @Binding var isExpanded: Bool
+
+    var body: some View {
+        @Bindable var settings = coordinator.settings
+        let note = KeystrokeRules.accessibilityNote(mode: settings.keystrokeMode,
+                                                    accessibilityGranted: coordinator.permissions.state(.accessibility) == .granted)
+            ?? (settings.keystrokeMode == .off ? nil : coordinator.keystrokeSecureInputNote)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 4) {
+                DisclosureArrow(isExpanded: $isExpanded, label: "keystroke settings")
+                Button { isExpanded.toggle() } label: { Text("Keystrokes").font(.headline) }
+                    .buttonStyle(.plain)
+                Spacer()
+                Picker("Show keystrokes", selection: $settings.keystrokeMode) {
+                    ForEach(KeystrokeMode.allCases) { Text($0.title).tag($0) }
+                }
+                .labelsHidden()
+                .fixedSize()
+                .controlSize(.small)
+                .help("Shows shortcuts (⇧⌘P, Ctrl+Shift+P) and keys such as Return or Esc in a pill at the bottom of the frame. "
+                      + "Typed text never shows.")
+            }
+            if let note {
+                Label(note, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 18)
+            }
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 8) {
+                    CheckboxWithNote("Include keystrokes in screen.mov",
+                                     note: "The pill is recorded like the screen. TwinTake's other windows never are",
+                                     isOn: $settings.keystrokesInScreen)
+                        .toggleStyle(.checkbox)
+                        .disabled(!coordinator.state.canStart)
+                    HStack {
+                        Text("Key names").foregroundStyle(.secondary)
+                        Picker("Key names", selection: $settings.keyNameStyle) {
+                            ForEach(KeyNameStyle.allCases) { Text($0.title).tag($0) }
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                    }
+                    Text("Auto uses Windows names (Ctrl+Shift+P) while a Parallels VM is in front, else Mac symbols (⇧⌘P). "
+                         + "Typed text, ⇧ with a letter and secure fields never show.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.leading, 18)
+            }
         }
     }
 }

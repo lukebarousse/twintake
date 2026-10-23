@@ -314,6 +314,14 @@ final class SessionCoordinator {
     @ObservationIgnored private var controlBarFlashTask: Task<Void, Never>?
     /// The replay window (what was just recorded, while the take goes on). Made at launch.
     @ObservationIgnored private var replay: ReplayController?
+    /// The on-screen keystrokes (the key monitor and the pill). Made at launch, so no key monitor
+    /// runs in tests or the docs screenshots.
+    @ObservationIgnored private var keystrokes: KeystrokeController?
+    /// The take's screen filter holds the keystroke pill's window (from Start until the take is
+    /// saved), so the window stays on screen for the whole take (`KeystrokeRules.hudOrderedIn`).
+    @ObservationIgnored private var takeHasPillWindow = false
+    /// Why keystrokes are hidden while another app keeps secure keyboard entry on, for the menu.
+    private(set) var keystrokeSecureInputNote: String?
     /// The replay window shows: the Replay buttons light up.
     private(set) var replayShown = false
     /// Runs preflight every `controlBarPreflightInterval` while the bar shows, TwinTake is idle
@@ -402,6 +410,8 @@ final class SessionCoordinator {
         controlBar = ControlBarController(coordinator: self)
         syncControlBar()
         replay = ReplayController(coordinator: self)
+        keystrokes = KeystrokeController(coordinator: self)
+        updateKeystrokes()
         Task {
             await refreshDevices()
             await updatePreview()
@@ -522,6 +532,7 @@ final class SessionCoordinator {
         deviceDebounceTask?.cancel()
         cameraWindow?.close()
         controlBar?.close()
+        keystrokes?.close()
         await closeWarmCamera()
         await closeIdleMacMic()
         hotKeys.unregisterAll()
@@ -588,6 +599,7 @@ final class SessionCoordinator {
         rememberDevicePicks()
         refreshAutomaticPicks()
         if state.canStart, frameShownWhileIdle { showIdleFrame() }
+        updateKeystrokes()
         refreshPreviewPhase()
         Task {
             await updatePreview()
@@ -765,6 +777,7 @@ final class SessionCoordinator {
         cameraWindow?.screensChanged()
         controlBar?.screensChanged()
         replay?.screensChanged()
+        updateKeystrokes()
         if state.canStart {
             overlayAwaitsDisplay = false
             if frameShownWhileIdle { showIdleFrame() }
@@ -1207,6 +1220,14 @@ final class SessionCoordinator {
                 }
             }
             overlay.show(frameGlobal: s.frameGlobal, display: s.display, dimOpacity: dimOpacity)
+            // The keystroke pill's window over the take's frame before the screen recorder builds its
+            // filter: screen.mov shows it, and every other TwinTake window stays out. Not with
+            // Keystrokes Off: that take records the screen as without the feature.
+            if KeystrokeRules.pillInScreenRecording(mode: settings.keystrokeMode, keystrokesInScreen: settings.keystrokesInScreen),
+               let id = keystrokes?.prepareForTake(frameGlobal: s.frameGlobal) {
+                takeHasPillWindow = true
+                screenConfig?.shownOwnWindowIDs = [id]
+            }
         }
         // The snap message replaced the rematch note: show both.
         if !rematched.isEmpty, let snapNote = notice, snapNote != rematched.joined(separator: " ") {
@@ -1259,6 +1280,12 @@ final class SessionCoordinator {
             await abortStart(errors: prepareErrors, cameraStarted: false, screenStarted: false)
             return
         }
+        if let screenRecorder, screenConfig?.shownOwnWindowIDs.isEmpty == false, screenRecorder.shownOwnWindowIDs.isEmpty {
+            session.events.append(.warning, ["source": "keystrokes", "message": KeystrokeRules.notInScreenMessage])
+            Self.log.error("\(KeystrokeRules.notInScreenMessage, privacy: .public)")
+            // Not in the filter: the window need not stay on screen for the take.
+            takeHasPillWindow = false
+        }
         if let change = cameraRecorder?.lastGraphChange {
             // The upgrade of a claimed preview camera (or the build of a fresh one), with its time.
             Self.log.notice("Camera graph \(change.logLine, privacy: .public)")
@@ -1293,6 +1320,8 @@ final class SessionCoordinator {
         startData["frame_anchor"] = plan.screen.map { $0.preset.sizing == .fullDisplay ? "none" : $0.anchor.rawValue }
         startData["scheduled_start_margin_ms"] = String(StartSchedule.marginNs / 1_000_000)
         if cameraRecorder != nil { startData["camera_window"] = settings.cameraWindowShown && settings.cameraWindowWhileRecording ? "on" : "off" }
+        startData.merge(KeystrokeRules.sessionStartData(mode: settings.keystrokeMode,
+                                                        inScreen: screenRecorder.map { !$0.shownOwnWindowIDs.isEmpty })) { _, new in new }
         session.events.append(.sessionStart, startData, at: startNs)
 
         let outcome = await Self.startAll(camera: cameraRecorder, screen: screenRecorder,
@@ -2363,7 +2392,9 @@ final class SessionCoordinator {
 
     private func stateChanged() {
         if state.canStart { takeRecordsScreenMic = nil }
+        if state.canStart { takeHasPillWindow = false }
         syncCameraWindow()
+        updateKeystrokes()
         refreshPreviewPhase()
         applyDetector(levels.detectorStatus)
         // At .stopping this logs replay_end before session_stop and lets go of the files.
@@ -3079,6 +3110,45 @@ final class SessionCoordinator {
         Self.log.notice("Replay \(kind.rawValue, privacy: .public) at \(data["elapsed_s"] ?? "?", privacy: .public) s")
     }
 
+    // MARK: - Keystrokes
+
+    /// Shows or hides the keystroke pill and runs or stops its key monitor, for the Keystrokes
+    /// setting and the take, over the frame Start records (or the take records).
+    func updateKeystrokes() {
+        let recording = state == .recording
+        let mode = settings.keystrokeMode
+        keystrokes?.update(
+            show: !shuttingDown && KeystrokeRules.showsKeystrokes(mode, recording: recording),
+            orderedIn: !shuttingDown && KeystrokeRules.hudOrderedIn(mode: mode, recording: recording, takeActive: !state.canStart,
+                                                                    takeHasPillWindow: takeHasPillWindow),
+            frameGlobal: keystrokeFrameGlobal)
+    }
+
+    /// The menu's note while another app keeps secure keyboard entry on (`KeystrokeController`).
+    func setKeystrokeSecureInputNote(_ note: String?) {
+        if note != keystrokeSecureInputNote { keystrokeSecureInputNote = note }
+    }
+
+    /// The frame the pill sits in: the take's frame (at its display's place now; nil while that
+    /// display is gone), else the frame Start would record. Also in Camera mode, on the display
+    /// Start would record. During a take it never moves to another display, so the screen
+    /// stream's filter, built at prepare, keeps showing the pill.
+    private var keystrokeFrameGlobal: CGRect? {
+        if let plan = active?.screenPlan {
+            guard let display = displays.first(where: { $0.id == plan.display.id }) else { return nil }
+            return FrameGeometry.globalRect(fromLocal: plan.config.frameRectPt, displayBoundsGlobal: display.boundsGlobal)
+        }
+        guard let display = resolvedDisplay()?.display else { return nil }
+        return display.globalFrameRect(for: resolvedPreset(for: display), anchor: settings.frameAnchor(for: display))
+    }
+
+    /// A pill the take showed: a `keystroke` event, only while recording.
+    func logKeystroke(label: String, macLabel: String, count: Int) {
+        guard state == .recording, let session = active, let elapsed = takeElapsedS, elapsed >= 0 else { return }
+        session.events.append(.keystroke, KeystrokeRules.eventData(label: label, macLabel: macLabel, count: count,
+                                                                   elapsedS: elapsed))
+    }
+
     // MARK: - Hotkeys
 
     private func registerHotKeys() {
@@ -3093,6 +3163,8 @@ final class SessionCoordinator {
     }
 
     private func handle(_ action: HotKeyAction) {
+        // Its modifiers (⌃⌥⌘) put no pill on screen or in screen.mov.
+        keystrokes?.hotKeyPressed()
         switch action {
         case .startStop: toggleRecording()
         case .snapWindow: snapNow()

@@ -39,6 +39,9 @@ public struct SessionEvent: Codable, Sendable, Equatable {
         /// The replay's Sound switch changed during the take (1.4): its sound may be in the mics.
         /// `data`: `state` (`on` or `off`), `elapsed_s`.
         case replaySound = "replay_sound"
+        /// A keystroke the on-screen pill showed during the take (1.6): a shortcut or a named key,
+        /// never a typed character. `data`: `label` (as shown), `mac_label`, `repeat`, `elapsed_s`.
+        case keystroke
         case warning
         case error
     }

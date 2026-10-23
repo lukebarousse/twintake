@@ -194,6 +194,10 @@ public final class ScreenRecorder: SessionTrackRecorder, @unchecked Sendable {
         }
     }
 
+    /// The `config.shownOwnWindowIDs` the prepared stream shows (the keystroke pill). One that
+    /// ScreenCaptureKit did not list at prepare is missing here: screen.mov records without it.
+    public var shownOwnWindowIDs: [UInt32] { lock.withLock { streams?.shownOwnWindowIDs ?? [] } }
+
     public var recordingProblem: String? {
         lock.withLock {
             if let stoppedEarly { return "ended early: \(stoppedEarly)" }
@@ -248,21 +252,26 @@ public final class ScreenRecorder: SessionTrackRecorder, @unchecked Sendable {
             throw ScreenRecorderError.displayNotFound(config.displayID)
         }
         // The recorder's own windows (the camera window, the frame overlay) never appear: a region
-        // capture leaves the excluded apps out and records what is under their windows.
+        // capture leaves the excluded apps out and records what is under their windows. Only the
+        // windows in `shownOwnWindowIDs` (the keystroke pill) stay in (ScreenFilterPlan).
         let ownProcess = ProcessInfo.processInfo.processIdentifier
-        let excludedApps = content.applications.filter {
-            Self.isExcluded(bundleID: $0.bundleIdentifier, processID: $0.processID,
-                            excludedBundleIDs: config.excludedBundleIDs, ownProcessID: ownProcess)
-        }
+        let plan = try ScreenFilterPlan.make(
+            config: config,
+            apps: content.applications.map { ScreenFilterPlan.App(processID: $0.processID, bundleID: $0.bundleIdentifier) },
+            windows: content.windows.map { ScreenFilterPlan.Window(id: UInt32($0.windowID), processID: $0.owningApplication?.processID) },
+            ownProcessID: ownProcess)
+        let excludedApps = content.applications.filter { plan.excludedProcessIDs.contains($0.processID) }
+        let planWindows = plan.windowIDs.compactMap { id in content.windows.first { $0.windowID == CGWindowID(id) } }
 
         let filter: SCContentFilter
-        if let windowID = config.windowID {
-            guard let window = content.windows.first(where: { $0.windowID == CGWindowID(windowID) }) else {
-                throw ScreenRecorderError.windowNotFound(windowID)
-            }
+        switch plan.kind {
+        case .singleWindow:
+            guard let window = planWindows.first else { throw ScreenRecorderError.windowNotFound(config.windowID ?? 0) }
             filter = SCContentFilter(desktopIndependentWindow: window)
-        } else {
-            filter = SCContentFilter(display: display, excludingApplications: excludedApps, exceptingWindows: [])
+        case .windows:
+            filter = SCContentFilter(display: display, including: planWindows)
+        case .display:
+            filter = SCContentFilter(display: display, excludingApplications: excludedApps, exceptingWindows: planWindows)
         }
 
         let video = VideoPipeline(queue: videoQueue, frameRate: config.frameRate, outputSize: config.outputPx)
@@ -274,9 +283,20 @@ public final class ScreenRecorder: SessionTrackRecorder, @unchecked Sendable {
             meter: levels.map { AudioLevelMeter(source: .systemAudio, monitor: $0) }) : nil
         let router = StreamRouter(video: video, mic: mic, systemAudio: systemAudio)
         router.onStop = { [weak self] id, error in self?.streamStopped(id, error: error) }
-        router.onActivity = { [weak self] active in self?.windowActivityChanged(active: active) }
+        // The recorded window closing and coming back: ScreenCaptureKit says it for one window
+        // alone. With the keystroke pill the pill keeps the stream active, so the window list is
+        // read instead (WindowPresenceWatch).
+        var windowWatch: WindowPresenceWatch?
+        if plan.kind == .singleWindow {
+            router.onActivity = { [weak self] active in self?.windowActivityChanged(active: active, lastFrameRepeats: true) }
+        } else if plan.kind == .windows, let windowID = config.windowID {
+            windowWatch = WindowPresenceWatch(windowID: windowID) { [weak self] onScreen in
+                self?.windowActivityChanged(active: onScreen, lastFrameRepeats: false)
+            }
+        }
 
-        let main = SCStream(filter: filter, configuration: ScreenStreamSettings.streamConfiguration(for: config),
+        let main = SCStream(filter: filter,
+                            configuration: ScreenStreamSettings.streamConfiguration(for: config, singleWindow: !plan.usesSourceRect),
                             delegate: router)
         try main.addStreamOutput(router, type: .screen, sampleHandlerQueue: videoQueue)
         if mic != nil {
@@ -287,6 +307,7 @@ public final class ScreenRecorder: SessionTrackRecorder, @unchecked Sendable {
             try main.addStreamOutput(router, type: .audio, sampleHandlerQueue: audioQueue)
         }
         try await Self.startCapture(main)
+        windowWatch?.start()
 
         var audioStream: SCStream?
         var discard: DiscardedFrames?
@@ -302,6 +323,7 @@ public final class ScreenRecorder: SessionTrackRecorder, @unchecked Sendable {
                 try stream.addStreamOutput(sink, type: .screen, sampleHandlerQueue: discardQueue)
                 try await Self.startCapture(stream)
             } catch {
+                windowWatch?.stop()
                 await Self.stopCapture(main)
                 throw error
             }
@@ -311,7 +333,8 @@ public final class ScreenRecorder: SessionTrackRecorder, @unchecked Sendable {
 
         return CaptureStreams(main: main, systemAudioStream: audioStream, router: router, discard: discard,
                               video: video, mic: mic, systemAudio: systemAudio,
-                              videoDevice: videoDevice(), micDevice: micDevice())
+                              videoDevice: videoDevice(), micDevice: micDevice(), shownOwnWindowIDs: plan.shownOwnWindowIDs,
+                              windowWatch: windowWatch)
     }
 
     /// Waits briefly for the first frame and audio buffers, so `start` knows the source formats.
@@ -481,12 +504,23 @@ public final class ScreenRecorder: SessionTrackRecorder, @unchecked Sendable {
         }
     }
 
-    private func windowActivityChanged(active: Bool) {
+    private func windowActivityChanged(active: Bool, lastFrameRepeats: Bool) {
         guard config.windowID != nil, let events = lock.withLock({ self.events }) else { return }
         events.append(.warning, [
             "track": TrackInfo.Role.screenVideo.rawValue,
-            "message": active ? "The recorded window is back." : "The recorded window closed; the last frame repeats until it returns.",
+            "message": Self.windowActivityMessage(active: active, lastFrameRepeats: lastFrameRepeats),
         ])
+    }
+
+    /// The warning when the recorded window of a window capture leaves the screen or comes back.
+    /// - Parameter lastFrameRepeats: the window alone (the stream sends nothing while it is gone);
+    ///   false with the keystroke pill (the frame region keeps coming, black where the window was).
+    static func windowActivityMessage(active: Bool, lastFrameRepeats: Bool) -> String {
+        if active { return "The recorded window is back." }
+        return lastFrameRepeats
+            ? "The recorded window closed; the last frame repeats until it returns."
+            : "The recorded window is not on screen (closed, minimized, hidden or on another Space); "
+                + "screen.mov is black, with the keystroke pill, until it returns."
     }
 
     /// True for an app the region filter leaves out: one of `excludedBundleIDs`, or this process
@@ -567,12 +601,16 @@ private final class CaptureStreams: @unchecked Sendable {
     let systemAudio: AudioPipeline?
     let videoDevice: DeviceInfo
     let micDevice: DeviceInfo?
+    /// The `shownOwnWindowIDs` the stream's filter shows.
+    let shownOwnWindowIDs: [UInt32]
+    /// Watches the recorded window of a window capture with the keystroke pill.
+    let windowWatch: WindowPresenceWatch?
     let mainStreamID: ObjectIdentifier
     let systemAudioStreamID: ObjectIdentifier?
 
     init(main: SCStream, systemAudioStream: SCStream?, router: StreamRouter, discard: DiscardedFrames?,
          video: VideoPipeline, mic: AudioPipeline?, systemAudio: AudioPipeline?,
-         videoDevice: DeviceInfo, micDevice: DeviceInfo?) {
+         videoDevice: DeviceInfo, micDevice: DeviceInfo?, shownOwnWindowIDs: [UInt32], windowWatch: WindowPresenceWatch?) {
         self.main = main
         self.systemAudioStream = systemAudioStream
         self.router = router
@@ -582,11 +620,14 @@ private final class CaptureStreams: @unchecked Sendable {
         self.systemAudio = systemAudio
         self.videoDevice = videoDevice
         self.micDevice = micDevice
+        self.shownOwnWindowIDs = shownOwnWindowIDs
+        self.windowWatch = windowWatch
         mainStreamID = ObjectIdentifier(main)
         systemAudioStreamID = systemAudioStream.map(ObjectIdentifier.init)
     }
 
     func stopCapture() async {
+        windowWatch?.stop()
         await ScreenRecorder.stopCapture(main)
         if let systemAudioStream { await ScreenRecorder.stopCapture(systemAudioStream) }
     }

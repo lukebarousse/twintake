@@ -317,14 +317,19 @@ private func audio(_ uid: String, _ name: String) -> CaptureDeviceInfo {
     }
 
     /// The plan the coordinator builds passes the list to the screen recorder, and the region
-    /// filter leaves those apps (and this process) out.
+    /// filter leaves those apps (and this process) out. Its only exceptions are the plan's own
+    /// windows to show (the keystroke pill, `ScreenFilterPlan`); the system-audio stream has none.
     @Test func thePlanAndTheFilterUseTheList() throws {
         let coordinator = try String(contentsOf: Self.root.appendingPathComponent("Sources/RecorderApp/SessionCoordinator.swift"),
                                      encoding: .utf8)
         #expect(coordinator.contains("excludedBundleIDs: SessionRules.excludedBundleIDs(mainBundleID: Bundle.main.bundleIdentifier)"))
         let recorder = try String(contentsOf: Self.root.appendingPathComponent("Sources/ScreenCapture/ScreenRecorder.swift"),
                                   encoding: .utf8)
+        #expect(recorder.contains("SCContentFilter(display: display, excludingApplications: excludedApps, exceptingWindows: planWindows)"))
         #expect(recorder.contains("SCContentFilter(display: display, excludingApplications: excludedApps, exceptingWindows: [])"))
-        #expect(recorder.contains("excludedBundleIDs: config.excludedBundleIDs, ownProcessID: ownProcess"))
+        #expect(recorder.contains("let excludedApps = content.applications.filter { plan.excludedProcessIDs.contains($0.processID) }"))
+        let plan = try String(contentsOf: Self.root.appendingPathComponent("Sources/ScreenCapture/ScreenFilterPlan.swift"),
+                              encoding: .utf8)
+        #expect(plan.contains("excludedBundleIDs: config.excludedBundleIDs, ownProcessID: ownProcessID"))
     }
 }

@@ -15,6 +15,10 @@
 // - `CameraWindowGeometry`, `ControlBarGeometry`: where the camera window and the control bar
 //   open, and how they stay on screen.
 // - `GlobalHotKeys` / `HotKey`: Carbon hotkeys (no permission needed).
+// - Keystrokes: `KeyMonitor` (listen-only NSEvent monitors; other apps' keys need Accessibility),
+//   `KeystrokeFilter`, `KeystrokeNames`, `KeystrokeTracker` and `KeystrokePlacement` (plain logic:
+//   which presses show, their Mac or Windows names, repeats and fades, the place in the frame), and
+//   `KeystrokeHUD`, the pill: the one TwinTake window that is in screen.mov.
 //
 // Coordinates follow `FrameGeometry` in RecorderCore: global CG points (top-left origin) unless
 // a name says local or AppKit.

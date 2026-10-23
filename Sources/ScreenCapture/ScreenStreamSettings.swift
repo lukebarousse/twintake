@@ -47,7 +47,10 @@ enum ScreenStreamSettings {
     }
 
     /// Configuration for the main stream: video, plus the mic, plus system audio in region mode.
-    static func streamConfiguration(for config: ScreenRecorderConfig) -> SCStreamConfiguration {
+    /// - Parameter singleWindow: the filter draws one window at its own size
+    ///   (`ScreenFilterPlan.Kind.singleWindow`). Nil: a window capture (`windowID`) is one. A window
+    ///   capture that also shows TwinTake's keystroke pill crops the display to the frame instead.
+    static func streamConfiguration(for config: ScreenRecorderConfig, singleWindow: Bool? = nil) -> SCStreamConfiguration {
         let sc = SCStreamConfiguration()
         sc.width = config.outputPx.width
         sc.height = config.outputPx.height
@@ -62,7 +65,7 @@ enum ScreenStreamSettings {
         sc.backgroundColor = CGColor.black
         sc.streamName = SessionFolder.screenFileName
 
-        if config.windowID != nil {
+        if singleWindow ?? (config.windowID != nil) {
             // Independent-window capture draws the window at its natural size unless told to
             // scale; sourceRect does not apply to it.
             sc.scalesToFit = true

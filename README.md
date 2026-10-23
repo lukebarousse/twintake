@@ -21,6 +21,7 @@ Status: early development. TwinTake is built for one creator's desk setup. Suppo
 - **A fixed 16:9 screen frame.** TwinTake snaps your app's window into the frame and dims the rest of the display. Parallels Desktop keeps its toolbar outside the frame.
 - **Control bar and camera window.** Start and stop, switch apps, flag a mistake, and watch yourself. Neither window is in the recording, and neither takes the focus from your app.
 - **Replay while recording.** Review the take so far, with Skip silence and Flags only, while the take goes on.
+- **Keystrokes on screen.** The shortcuts you press (⇧⌘P, or Ctrl+Shift+P in a Parallels VM) show in a pill at the bottom of the frame and in screen.mov. Typed text never shows.
 - **Mic and camera checks.** Live meters. Warnings when the camera records with its built-in mic or does not hear you. Checks for a capture card on USB 2 and for empty frames.
 - **Crash-safe sessions.** Both files get a movie fragment every 2 s, so a crash keeps everything up to the last fragment. The session folder format is documented for editing tools.
 
@@ -64,7 +65,7 @@ Add your Apple ID in Xcode > Settings > Accounts. Then create a free Apple Devel
 
 | Page | What it covers |
 |---|---|
-| [User guide](docs/guide.md) | Every feature: modes, devices, camera window, screen frame, control bar, Flag, Replay, mic checks, settings, shortcuts |
+| [User guide](docs/guide.md) | Every feature: modes, devices, camera window, screen frame, control bar, Flag, Replay, keystrokes, mic checks, settings, shortcuts |
 | [Setup](docs/setup.md) | Camera HDMI settings, capture card, HDMI splitters, display refresh rate, permissions, signing |
 | [Troubleshooting](docs/troubleshooting.md) | Green preview, 1080p signal, mic warnings, menu bar indicators, crashes and logs |
 | [Session folder format](docs/SCHEMA.md) | camera.mov, screen.mov, session.json, events.jsonl and voice.jsonl, field by field |

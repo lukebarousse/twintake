@@ -12,6 +12,7 @@ This guide covers every part of TwinTake. For the hardware and the first setup, 
 - [Control bar](#control-bar)
 - [Flag](#flag)
 - [Replay](#replay)
+- [Keystrokes](#keystrokes)
 - [Mic check and the mic warning](#mic-check-and-the-mic-warning)
 - [Settings](#settings)
 - [Shortcuts](#shortcuts)
@@ -35,7 +36,7 @@ TwinTake lives in the menu bar. Click its record icon to open the menu. From top
 - **Camera** and **Screen** sections, for the modes that use them.
 - **Issues:** a red item blocks Start. An orange item is a warning.
 - **Start Recording** (Stop while recording), the level meters, and status lines: the tracks, Flag and Replay, notices, and the last take ("Saved: 2026-10-12_174000 (12:34)").
-- **Permissions**, **Recording Settings**, **Control Bar** and **Shortcuts**.
+- **Permissions**, **Recording Settings**, **Control Bar**, **Keystrokes** and **Shortcuts**.
 - **Open Recordings Folder** and **Quit**.
 
 The menu stays attached under the menu bar when its height changes. It scrolls when it is taller than the display.
@@ -137,7 +138,7 @@ The size in pixels shows next to the Frame picker.
 - **Frame position:** **Bottom** puts the 16:9 frame flush with the bottom of the display. **Top** puts it under the menu bar. The default is Bottom on the built-in display and Top on other displays. TwinTake remembers the pick for each display. See [setup.md](setup.md#frame-position).
 - **Record computer sound** (on by default): sound from videos and apps, on its own track (screen.mov A2). TwinTake's own sound is never in it.
 - **Snap the front window into the frame on Start** (on by default).
-- **Hide other windows** (off by default): records only the snapped app. Menus it opens may be missing.
+- **Hide other windows** (off by default): records only the snapped app. Menus it opens may be missing. With keystrokes in screen.mov, TwinTake records the frame region with only the snapped window and the keystroke pill in it, so a part of the window moved out of the frame is not recorded. If that window closes, hides or goes to another Space, screen.mov is black (with the pill) until it comes back, and events.jsonl gets a warning.
 - **Dim outside the frame** (on by default).
 - **Hide the Parallels toolbar** (on by default) and its **Toolbar offset**. See [Parallels Desktop](#parallels-desktop).
 
@@ -259,6 +260,39 @@ Replay shows what you just said, with the screen, while you still record.
 
 **For the editor:** during a take, events.jsonl gets `replay_start` when the window opens, `replay_end` when it closes (or at Stop), and `replay_sound` when Sound changes. An editor can cut the stretch you spent in the replay. A replay of a saved take logs nothing.
 
+## Keystrokes
+
+Like CleanShot X, TwinTake shows the shortcuts you press in a dark pill near the bottom of the frame, for example **⇧⌘P**, **⌥⌘7**, **Return** or **Ctrl+Shift+P**. Typed text never shows.
+
+**What shows:**
+
+- A key pressed with ⌘ or ⌃, with or without ⇧ and ⌥: **⇧⌘P**, **⌃⌥⌘K**, **⌘ Space**.
+- These keys alone or with ⇧ or ⌥: Return, Enter, Tab, Esc, Delete, Forward Delete (⌦), the arrows, Page Up, Page Down, Home, End and F1 to F19 (**⌥←**, **⌥ Delete**).
+- In a Parallels Windows VM, ⌥ is Alt, so Alt with any key shows too (**Alt+F**).
+- When you hold ⌘ or ⌃ for a moment (0.2 s), the pill shows them (**⌘**, then **⇧⌘**). When the key lands, it shows the whole shortcut. A quick shortcut shows only the shortcut.
+- The same shortcut again while the pill shows counts up: **⌘Z ×3**. A held key keeps its pill on and does not count.
+
+**What never shows:** letters, digits and other characters typed alone or with ⇧, Space alone, ⌥ or ⌥⇧ with a character on a Mac (that types –, é or @), anything while a password field (secure keyboard entry) has the keys, and TwinTake's own shortcuts (⌃⌥⌘R, ⌃⌥⌘B and the others), not even their ⌃⌥⌘ while you hold it.
+
+**Where:** centered in the frame, 14% of its height above its bottom edge. The pill shows for 1.5 s after the last key, then fades. One pill at a time: a new shortcut replaces it.
+
+**Settings** (the **Keystrokes** row in the menu):
+
+- **Off**, **While recording** or **Always** (the default: while TwinTake runs).
+- **Include keystrokes in screen.mov** (on by default): the pill is in the recording, like the screen under it. TwinTake's other windows are never recorded. It applies at the next Start. A take started with Keystrokes **Off** has no pill in screen.mov, also when you turn keystrokes on during it (the pill then shows on screen only).
+- **Key names:**
+  - **Auto** (the default): Windows names while a Parallels VM window is the front app, else Mac symbols. Parallels sends ⌘ to Windows as Ctrl, so ⇧⌘P in VS Code inside the VM shows **Ctrl+Shift+P**. ⌘Tab stays **⌘ Tab**: macOS switches apps.
+  - **Mac symbols:** ⇧⌘P, ⌥⌘7, Return, Esc, Tab, Delete, ← → ↑ ↓.
+  - **Windows names:** Ctrl+Shift+P, Ctrl+Alt+7, Enter, Backspace. ⌘ and ⌃ are Ctrl, ⌥ is Alt.
+
+A character key shows as your keyboard layout names it, so a German or French layout reads right.
+
+**Accessibility:** TwinTake sees other apps' keys with the Accessibility permission (the same one window snapping uses). Without it, no pill shows, and the Keystrokes row says so. TwinTake never asks for another permission for keystrokes.
+
+**Secure keyboard entry:** while an app has it on (a password field, or Terminal's Secure Keyboard Entry), macOS keeps every key from TwinTake, so no pill shows. When it stays on for a few seconds, the Keystrokes row names that app (some apps leave it on after their password field closes).
+
+**For the editor:** during a take, events.jsonl gets a `keystroke` line for each shortcut the pill shows, with `label`, `mac_label`, `repeat` and `elapsed_s`. See [SCHEMA.md](SCHEMA.md#eventsjsonl).
+
 ## Mic check and the mic warning
 
 The camera audio (camera.mov A1) is the dialogue track. An external mic in the camera's mic jack gives the best sound. When that mic is unplugged, the camera may switch to its built-in mic without a sound, or send silence. TwinTake listens for both cases.
@@ -329,6 +363,8 @@ TwinTake saves every setting at once.
 - You can change the codec, the bitrates and the folder only while nothing records. A change never opens the camera again; the next take uses it.
 - **Mic check** and **Mic warning** are here too. See [Mic check and the mic warning](#mic-check-and-the-mic-warning).
 
+**Keystrokes** (in the menu): Off, While recording or Always. The arrow shows **Include keystrokes in screen.mov** and **Key names**. See [Keystrokes](#keystrokes).
+
 **Control Bar** (in the menu): the switch shows or hides the bar. The arrow shows the pinned apps (move up, move down, remove), **Flag looks back**, and **Move Bar to the Default Place**.
 
 **Permissions** (in the menu): the four permissions and their state, with **Allow…** or **Open Settings** buttons. The section opens by itself when a permission is missing. See [setup.md](setup.md#permissions).
@@ -390,7 +426,7 @@ Each take is one folder in the recording folder, named by its start time:
 ├── camera.mov      Camera and Both modes
 ├── screen.mov      Screen and Both modes
 ├── session.json    what was recorded, with which devices and formats
-├── events.jsonl    a timeline of events: flags, snaps, warnings, replays
+├── events.jsonl    a timeline of events: flags, snaps, warnings, replays, keystrokes
 ├── voice.jsonl     when you talk, written at Stop when a mic was recorded
 └── derived/        not created by TwinTake; reserved for editing tools
 ```

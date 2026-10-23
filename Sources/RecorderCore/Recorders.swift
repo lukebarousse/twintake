@@ -59,18 +59,25 @@ public struct ScreenRecorderConfig: Sendable, Hashable {
     public var excludedBundleIDs: [String]
     /// When set, record only this window (`CGWindowID`), scaled to fit `outputPx`, instead of the
     /// frame region. Other windows, notifications and overlaps never appear, but menus that the
-    /// app draws as separate windows may be missing.
+    /// app draws as separate windows may be missing. With `shownOwnWindowIDs` the frame region
+    /// is recorded with only this window and those windows in it (where they are on the display).
     public var windowID: UInt32?
+    /// Windows of the excluded apps (`CGWindowID`) that screen.mov still shows: TwinTake's
+    /// keystroke pill. A region capture names them as exceptions to the exclusion; a window
+    /// capture records them with its window. Empty: none (every other TwinTake window, the camera
+    /// window, the control bar, the menu and the overlay, always stays out).
+    public var shownOwnWindowIDs: [UInt32]
     public var codec: VideoCodec
     public var bitrate: Int
 
     public init(displayID: CGDirectDisplayID, frameRectPt: CGRect, outputPx: PixelSize,
                 frameRate: FrameRate = .fps47_952, micDeviceUID: String?, captureSystemAudio: Bool = true,
                 showsCursor: Bool = true, excludedBundleIDs: [String] = [], windowID: UInt32? = nil,
-                codec: VideoCodec = .hevc, bitrate: Int = 30_000_000) {
+                shownOwnWindowIDs: [UInt32] = [], codec: VideoCodec = .hevc, bitrate: Int = 30_000_000) {
         self.displayID = displayID; self.frameRectPt = frameRectPt; self.outputPx = outputPx
         self.frameRate = frameRate; self.micDeviceUID = micDeviceUID; self.captureSystemAudio = captureSystemAudio
         self.showsCursor = showsCursor; self.excludedBundleIDs = excludedBundleIDs; self.windowID = windowID
+        self.shownOwnWindowIDs = shownOwnWindowIDs
         self.codec = codec; self.bitrate = bitrate
     }
 
