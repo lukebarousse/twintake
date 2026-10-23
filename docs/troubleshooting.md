@@ -132,11 +132,8 @@ A red item in the menu blocks Start. The control bar's Record button is orange, 
 
 ## Keystrokes do not show
 
-- **Check Accessibility.** TwinTake sees other apps' keys with the Accessibility permission (or Input Monitoring). The Keystrokes row in the menu says when neither is on. Allow Accessibility under Permissions; the pill works within a few seconds.
-- **A shortcut shows only ⇧⌘ (for example CleanShot X's ⇧⌘4):** another app owns that shortcut, so macOS gives its key only to that app. Allow **Input Monitoring** under Permissions: the pill then shows **⇧⌘4**.
-- **The Keystrokes row says "Input Monitoring is allowed, but macOS has not given it to TwinTake yet":** quit and reopen TwinTake.
-- **The Keystrokes row says "If no keystrokes show, allow Accessibility …":** Input Monitoring is on and Accessibility is off. Press a shortcut. If none shows, allow Accessibility, or quit and reopen TwinTake.
-- **Input Monitoring stays "Not allowed" after you turned it on in System Settings:** quit and reopen TwinTake. If it is still off, open System Settings > Privacy & Security > Input Monitoring. Select TwinTake and click −. Then click +, choose TwinTake in Applications, turn it on, and quit and reopen TwinTake.
+- **Check Accessibility.** TwinTake sees other apps' keys with the Accessibility permission. The Keystrokes row in the menu says when it is off. Allow it under Permissions; the pill works within a few seconds.
+- **A shortcut shows only ⇧⌘ (for example CleanShot X's ⇧⌘4), or the Keystrokes row says "Quit and reopen TwinTake …":** quit and reopen TwinTake. After you first allow Accessibility, macOS can give TwinTake the keys of shortcuts other apps own only after a relaunch. If it still shows only ⇧⌘, check that Accessibility is on for TwinTake. TwinTake needs no entry under Input Monitoring: Accessibility covers it.
 - **Check the setting.** Menu > Keystrokes is Off, or While recording while nothing records.
 - **Typing never shows.** Only shortcuts (a key with ⌘ or ⌃) and keys such as Return, Tab, Esc, Delete and the arrows show. ⌥ with a letter types on a Mac (–, é, @), so it shows only in a Parallels Windows VM, as Alt.
 - **A password field, or Terminal with Secure Keyboard Entry on:** macOS keeps the keys from every other app, so nothing shows. Turn off Terminal > Secure Keyboard Entry to show keystrokes there.

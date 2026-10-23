@@ -322,10 +322,10 @@ final class SessionCoordinator {
     @ObservationIgnored private var takeHasPillWindow = false
     /// Why keystrokes are hidden while another app keeps secure keyboard entry on, for the menu.
     private(set) var keystrokeSecureInputNote: String?
-    /// The event tap (Input Monitoring) got a key press, so the keystrokes come from it and
-    /// shortcuts other apps own show too.
+    /// The event tap got a key press, so the keystrokes come from it and shortcuts other apps own
+    /// show too.
     private(set) var keystrokeTapProven = false
-    /// Input Monitoring is allowed but the tap does not start (it can need a relaunch), for the menu.
+    /// Listening is allowed but the tap does not work yet (it can need a relaunch), for the menu.
     private(set) var keystrokeTapNote: String?
     /// The replay window shows: the Replay buttons light up.
     private(set) var replayShown = false

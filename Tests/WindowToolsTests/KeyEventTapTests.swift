@@ -347,11 +347,6 @@ private final class Proof {
         #expect(monitor.takeTapDeaf())
         #expect(!monitor.takeTapDeaf())
     }
-
-    /// The tap goes at the head of the session's taps unless the device check asks for the tail.
-    @Test func headByDefault() {
-        #expect(KeyMonitor().tapPlacement == .headInsertEventTap)
-    }
 }
 
 /// The tap's C callback runs on the tap's own thread, never on main. A callback that inherited the

@@ -32,11 +32,12 @@ public struct KeyEventInfo {
 /// Watches key presses and modifier changes in every app, to show shortcuts on screen. It only
 /// listens: neither source ever changes, holds back or delays an event. One of two sources runs:
 ///
-/// - **The event tap** (`startTap`, Input Monitoring): a listen-only session tap
-///   (`KeyEventTap`). It sees every app's keys, TwinTake's own too, and also the keys of a shortcut
-///   another app owns as a global hotkey (CleanShot X's ⇧⌘4). It is created only when Input
-///   Monitoring is allowed, so it never makes macOS ask. Its first key press removes the AppKit
-///   monitors (`TapProof`); a tap that gets no key presses while they do is removed instead.
+/// - **The event tap** (`startTap`, listen access): a listen-only session tap (`KeyEventTap`). It
+///   sees every app's keys, TwinTake's own too, and also the keys of a shortcut another app owns as
+///   a global hotkey (CleanShot X's ⇧⌘4). It is created only when listening is allowed
+///   (`isListenAllowed`, which Accessibility gives), so it never makes macOS ask. Its first key
+///   press removes the AppKit monitors (`TapProof`); a tap that gets no key presses while they do
+///   is removed instead.
 /// - **The AppKit monitors** (`startMonitors`, Accessibility): other apps' keys come from a global
 ///   monitor, which needs Accessibility (TwinTake has it for window snapping), and TwinTake's own
 ///   keys from a local monitor. They miss keys another app's hotkey takes (only ⇧⌘ shows for
@@ -54,8 +55,6 @@ public final class KeyMonitor {
     /// Runs on the main thread, from inside an event's handling, when the tap proved itself or was
     /// removed as deaf, so the caller can update the sources and the menu (later, not inside it).
     public var sourceChanged: (() -> Void)?
-    /// Where the next tap goes among the session's taps: the head (the default) or the tail.
-    public var tapPlacement: CGEventTapPlacement = .headInsertEventTap
 
     private var global: Any?
     private var local: Any?
@@ -73,7 +72,7 @@ public final class KeyMonitor {
     /// True while a source is installed.
     public var isRunning: Bool { tapRunning || monitorsRunning }
 
-    /// The event tap runs (Input Monitoring), proven or still waiting for its first event.
+    /// The event tap runs, proven or still waiting for its first event.
     public var tapRunning: Bool { tap != nil }
 
     /// The tap runs and reported a key press, so it alone runs.
@@ -85,7 +84,8 @@ public final class KeyMonitor {
     /// Accessibility is allowed, so a global monitor gets other apps' key events.
     public static var isTrusted: Bool { AXIsProcessTrusted() }
 
-    /// Input Monitoring is allowed, so the event tap can run. Never asks.
+    /// Listening to the keyboard is allowed, so the event tap can run. Accessibility gives it, so
+    /// TwinTake needs no permission of its own for it. Never asks.
     public static var isListenAllowed: Bool { CGPreflightListenEventAccess() }
 
     /// Secure keyboard entry is on: a password field (or an app with it on) gets the keys. It is
@@ -139,8 +139,8 @@ public final class KeyMonitor {
 
     // MARK: - Event tap
 
-    /// Starts the event tap. Returns false, and creates nothing, without Input Monitoring, or when
-    /// macOS gives no working tap (after a grant it can need a relaunch). The AppKit monitors stay
+    /// Starts the event tap. Returns false, and creates nothing, without listen access, or when
+    /// macOS gives no working tap (after a fresh grant it can need a relaunch). The AppKit monitors stay
     /// until the tap reports its first key press, which removes them (the tap sees TwinTake's own
     /// keys too: one source only from then on).
     @discardableResult
@@ -150,7 +150,7 @@ public final class KeyMonitor {
         let generation = tapGeneration
         // Event time (the clock of `NSEvent.timestamp`) before the tap exists.
         let startedAt = ProcessInfo.processInfo.systemUptime
-        guard let tap = KeyEventTap.start(place: tapPlacement, deliver: { [weak self] event in
+        guard let tap = KeyEventTap.start(deliver: { [weak self] event in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.receivedTap(event, generation: generation) } }
         }) else { return false }
         self.tap = tap
@@ -165,7 +165,7 @@ public final class KeyMonitor {
     }
 
     /// True once after a tap was removed because it got no key presses while the AppKit monitors
-    /// did (`TapProof`): macOS gives Input Monitoring to TwinTake only after a relaunch.
+    /// did (`TapProof`): after a fresh grant, macOS can give the tap keys only after a relaunch.
     public func takeTapDeaf() -> Bool {
         defer { tapWasDeaf = false }
         return tapWasDeaf

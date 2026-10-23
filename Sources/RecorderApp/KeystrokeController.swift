@@ -12,7 +12,7 @@ import WindowTools
 final class KeystrokeController {
     /// How often a shown pill is moved on in time (its fade) and the held modifiers are read.
     static let tickInterval: Duration = .milliseconds(50)
-    /// How often Accessibility, Input Monitoring, the tap and secure keyboard entry are read while
+    /// How often Accessibility, listen access, the tap and secure keyboard entry are read while
     /// keystrokes show.
     static let watchInterval: Duration = .seconds(3)
 
@@ -29,10 +29,10 @@ final class KeystrokeController {
     private var watcher: Task<Void, Never>?
     /// Watches in a row that found secure keyboard entry on.
     private var secureInputChecks = 0
-    /// Failed tries in a row to get a working event tap while Input Monitoring was allowed
+    /// Failed tries in a row to get a working event tap while listening was allowed
     /// (`KeystrokeRules.tapFailures`).
     private var tapFailures = 0
-    /// When the tap was last tried (`nowS`), so it is tried at most every `KeystrokeRules.tapRetryS`.
+    /// When the tap was last tried (`nowS`), so it is tried at most every `KeystrokeRules.tapRetryInterval`.
     private var lastTapTryS: Double?
 
     init(coordinator: SessionCoordinator) {
@@ -45,9 +45,6 @@ final class KeystrokeController {
                 guard let self, self.showing else { return }
                 self.applyKeySource()
             }
-        }
-        if UserDefaults.standard.bool(forKey: KeystrokeRules.tapAtTailDefaultsKey) {
-            monitor.tapPlacement = .tailAppendEventTap
         }
     }
 
@@ -125,34 +122,36 @@ final class KeystrokeController {
 
     /// Picks the key sources (`KeystrokeRules.keySources`) and installs them. Cheap calls only,
     /// and nothing here makes macOS ask for a permission:
-    /// - Input Monitoring allowed: the event tap is tried (at most every `tapRetryS`). Its first
-    ///   key press removes the AppKit monitors (`KeyMonitor`). When macOS refuses it again and
-    ///   again, or it gets no key presses while the monitors do, the menu asks for a relaunch.
-    ///   Taken away, or turned off by macOS for good: the tap is removed.
+    /// - Listening allowed (`KeystrokeRules.listenAllowed`: Accessibility, and the listen access it
+    ///   gives): the event tap is tried (at most every
+    ///   `tapRetryInterval`). Its first key press removes the AppKit monitors (`KeyMonitor`). When
+    ///   macOS refuses it again and again, or it gets no key presses while the monitors do, the menu
+    ///   asks for a relaunch. Taken away, or turned off by macOS for good: the tap is removed.
     /// Also runs right after the tap proved itself or was found deaf (`KeyMonitor.sourceChanged`).
     /// - With Accessibility, the AppKit monitors run while no proven tap does, so allowing it in
     ///   System Settings starts the keystrokes. Taken away while they run: they are removed (they get
     ///   no keys without it), so allowing it again installs fresh ones.
     private func applyKeySource() {
         let wasRunning = monitor.isRunning
-        let listenAllowed = KeyMonitor.isListenAllowed
+        let trusted = KeyMonitor.isTrusted
+        let listenAllowed = KeystrokeRules.listenAllowed(accessibilityGranted: trusted, listenAccess: KeyMonitor.isListenAllowed)
         if monitor.tapRunning,
-           !(KeystrokeRules.keepsTap(showing: showing, inputMonitoringGranted: listenAllowed) && monitor.checkTap()) {
+           !(KeystrokeRules.keepsTap(showing: showing, listenAllowed: listenAllowed) && monitor.checkTap()) {
             monitor.stopTap()
         }
         let now = Self.nowS()
         let deaf = monitor.takeTapDeaf()
         if deaf { lastTapTryS = now }
         var refused = false
-        if KeystrokeRules.shouldTryTap(showing: showing, inputMonitoringGranted: listenAllowed, tapRunning: monitor.tapRunning,
-                                       sinceLastTryS: lastTapTryS.map { now - $0 }) {
+        if KeystrokeRules.shouldTryTap(showing: showing, listenAllowed: listenAllowed, tapRunning: monitor.tapRunning,
+                                       sinceLastTryS: lastTapTryS.map { now - $0 }, failures: tapFailures) {
             lastTapTryS = now
             refused = !monitor.startTap()
         }
         tapFailures = listenAllowed
             ? KeystrokeRules.tapFailures(after: tapFailures, proven: monitor.tapProven, refused: refused, deaf: deaf) : 0
         let sources = KeystrokeRules.keySources(showing: showing, tapRunning: monitor.tapRunning, tapProven: monitor.tapProven,
-                                                accessibilityGranted: KeyMonitor.isTrusted)
+                                                accessibilityGranted: trusted)
         if sources.contains(.monitors) {
             if !monitor.monitorsRunning { monitor.startMonitors() }
         } else {
@@ -164,12 +163,12 @@ final class KeystrokeController {
         }
         coordinator?.setKeystrokeTap(
             proven: monitor.tapProven,
-            note: KeystrokeRules.tapRelaunchNote(showing: showing, inputMonitoringGranted: listenAllowed,
+            note: KeystrokeRules.tapRelaunchNote(showing: showing, listenAllowed: listenAllowed,
                                                  tapProven: monitor.tapProven, failures: tapFailures))
     }
 
     /// Every `watchInterval` while keystrokes show (cheap calls only):
-    /// - The key source follows Accessibility, Input Monitoring and the tap (`applyKeySource`).
+    /// - The key source follows Accessibility, listen access and the tap (`applyKeySource`).
     /// - Secure keyboard entry on for `KeystrokeRules.secureInputChecksBeforeNote` watches in a
     ///   row: the menu says which app holds the keys (one can leave it on by mistake).
     private func watch() {

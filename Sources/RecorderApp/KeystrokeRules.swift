@@ -88,17 +88,12 @@ enum KeystrokeRules {
         return data
     }
 
-    /// Why keystrokes cannot show, for the menu: the AppKit key monitors need Accessibility, and no
-    /// event tap (Input Monitoring) proved itself with a key press. With Input Monitoring allowed
-    /// and no Accessibility, nothing can tell a tap that waits for its first key from one that
-    /// gets no keys until a relaunch (no monitor runs to compare with), so the note says what to
-    /// do if nothing shows.
-    static func accessibilityNote(mode: KeystrokeMode, accessibilityGranted: Bool, inputMonitoringGranted: Bool = false,
-                                  tapProven: Bool = false) -> String? {
+    /// Why keystrokes cannot show, for the menu: both key sources need Accessibility (the AppKit
+    /// monitors, and the event tap, which listens with the access Accessibility gives). No note
+    /// while a tap that got a key press runs: keystrokes show then.
+    static func accessibilityNote(mode: KeystrokeMode, accessibilityGranted: Bool, tapProven: Bool = false) -> String? {
         guard mode != .off, !accessibilityGranted, !tapProven else { return nil }
-        return inputMonitoringGranted
-            ? "If no keystrokes show, allow Accessibility under Permissions, or quit and reopen TwinTake."
-            : "Keystrokes need Accessibility. Allow it under Permissions."
+        return "Keystrokes need Accessibility. Allow it under Permissions."
     }
 
     // MARK: - Key source
@@ -139,23 +134,48 @@ enum KeystrokeRules {
         return sources
     }
 
-    /// How long between tries to create the tap while Input Monitoring is allowed and it does not
-    /// run (a grant can reach the tap only after a while, or after a relaunch).
+    /// How long between tries to create the tap while listening is allowed and it does not run (a
+    /// fresh Accessibility grant can reach the tap only after a while, or after a relaunch).
     static let tapRetryS = 3.0
 
-    /// Try to create the tap now: keystrokes show, Input Monitoring is allowed (a key tap created
-    /// without it makes macOS ask, so never then), the tap does not run, and the last try was at
-    /// least `tapRetryS` ago.
-    /// - Parameter sinceLastTryS: seconds since the last try; nil when there was none.
-    static func shouldTryTap(showing: Bool, inputMonitoringGranted: Bool, tapRunning: Bool, sinceLastTryS: Double?) -> Bool {
-        guard showing, inputMonitoringGranted, !tapRunning else { return false }
-        return sinceLastTryS.map { $0 >= tapRetryS } ?? true
+    /// The longest wait between tries once the menu asks for a relaunch.
+    static let tapRetryMaxS = 60.0
+
+    /// Seconds between tries: `tapRetryS` until the menu asks for a relaunch (a fresh grant still
+    /// starts the tap within seconds), then twice as long after each further failure, at most
+    /// `tapRetryMaxS`: until the relaunch, each try fails the same way.
+    static func tapRetryInterval(failures: Int) -> Double {
+        let steps = min(max(0, failures - tapFailuresBeforeRelaunchNote + 1), 5)
+        return min(tapRetryS * Double(1 << steps), tapRetryMaxS)
     }
 
-    /// The running tap stays: keystrokes show and Input Monitoring is still allowed. Else it is
-    /// removed (Keystrokes Off, or the permission was taken away) and the AppKit monitors take over.
-    static func keepsTap(showing: Bool, inputMonitoringGranted: Bool) -> Bool {
-        showing && inputMonitoringGranted
+    /// Listening counts as allowed only with Accessibility, so Accessibility alone turns the tap on
+    /// and off. Listen access alone (an old grant of its own, which the menu does not list) never
+    /// keeps a tap running.
+    /// - Parameters:
+    ///   - accessibilityGranted: `KeyMonitor.isTrusted`.
+    ///   - listenAccess: `KeyMonitor.isListenAllowed` (`CGPreflightListenEventAccess`). It never asks.
+    static func listenAllowed(accessibilityGranted: Bool, listenAccess: Bool) -> Bool {
+        accessibilityGranted && listenAccess
+    }
+
+    /// Try to create the tap now: keystrokes show, listening is allowed (a key tap created without
+    /// it makes macOS ask, so never then), the tap does not run, and the last try was at least
+    /// `tapRetryInterval(failures:)` ago.
+    /// - Parameters:
+    ///   - listenAllowed: `listenAllowed(accessibilityGranted:listenAccess:)`. It never asks.
+    ///   - sinceLastTryS: seconds since the last try; nil when there was none.
+    ///   - failures: `tapFailures` so far.
+    static func shouldTryTap(showing: Bool, listenAllowed: Bool, tapRunning: Bool, sinceLastTryS: Double?,
+                             failures: Int = 0) -> Bool {
+        guard showing, listenAllowed, !tapRunning else { return false }
+        return sinceLastTryS.map { $0 >= tapRetryInterval(failures: failures) } ?? true
+    }
+
+    /// The running tap stays: keystrokes show and listening is still allowed. Else it is removed
+    /// (Keystrokes Off, or Accessibility was taken away).
+    static func keepsTap(showing: Bool, listenAllowed: Bool) -> Bool {
+        showing && listenAllowed
     }
 
     /// Failed tries in a row (`tapRetryS` apart) before the menu asks for a relaunch. A tap that got
@@ -171,31 +191,18 @@ enum KeystrokeRules {
         return n
     }
 
-    /// Input Monitoring is allowed but macOS gives TwinTake no working tap yet: it often needs a
-    /// relaunch. It stays while a new tap waits for its first key press, so it does not flicker.
+    /// Listening is allowed but macOS gives TwinTake no working tap yet (refused, or deaf): after a
+    /// fresh Accessibility grant it often needs a relaunch. The AppKit monitors keep the keystrokes
+    /// going meanwhile. It stays while a new tap waits for its first key press, so it does not
+    /// flicker.
     /// - Parameter showing: keystrokes show (the tap is only tried then).
-    static func tapRelaunchNote(showing: Bool, inputMonitoringGranted: Bool, tapProven: Bool, failures: Int) -> String? {
-        guard showing, inputMonitoringGranted, !tapProven, failures >= tapFailuresBeforeRelaunchNote else { return nil }
-        return "Input Monitoring is allowed, but macOS has not given it to TwinTake yet. Quit and reopen TwinTake "
-            + "to show shortcuts other apps own (⇧⌘4)."
+    static func tapRelaunchNote(showing: Bool, listenAllowed: Bool, tapProven: Bool, failures: Int) -> String? {
+        guard showing, listenAllowed, !tapProven, failures >= tapFailuresBeforeRelaunchNote else { return nil }
+        return relaunchNote
     }
 
-    /// The line under Keystrokes that says whether shortcuts other apps own show: from the tap
-    /// (it got a key press), else from the permission, which also holds while keystrokes do not
-    /// show and while a new tap waits for its first key press.
-    static func sourceCaption(inputMonitoringGranted: Bool, tapProven: Bool) -> String {
-        if tapProven { return "Input Monitoring is on, so shortcuts other apps own show too (CleanShot X's ⇧⌘4)." }
-        if inputMonitoringGranted {
-            return "Input Monitoring is allowed. Shortcuts other apps own (CleanShot X's ⇧⌘4) show whole once "
-                + "TwinTake gets keys through it."
-        }
-        return "Shortcuts another app owns (CleanShot X's ⇧⌘4) show only their ⇧⌘. Allow Input Monitoring under "
-            + "Permissions to show them whole."
-    }
-
-    /// `defaults` key (Bool) that puts the event tap at the tail of the session's taps instead of
-    /// the head, for a device check (see docs/TESTING.md, Input Monitoring). Read at launch.
-    static let tapAtTailDefaultsKey = "keystrokeTapAtTail"
+    /// The menu's note when the tap needs a relaunch.
+    static let relaunchNote = "Quit and reopen TwinTake to show shortcuts other apps own (CleanShot X's ⇧⌘4)."
 
     /// The warning when the pill's window was not in the screen stream's filter at prepare.
     static let notInScreenMessage = "The keystroke pill's window was not found, so keystrokes are not in screen.mov."

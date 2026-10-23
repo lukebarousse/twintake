@@ -100,22 +100,12 @@ import WindowTools
         #expect(KeystrokeRules.accessibilityNote(mode: .whileRecording, accessibilityGranted: false) != nil)
         #expect(KeystrokeRules.accessibilityNote(mode: .off, accessibilityGranted: false) == nil)
         #expect(KeystrokeRules.accessibilityNote(mode: .always, accessibilityGranted: true) == nil)
-        // A tap (Input Monitoring) that got a key press shows keystrokes without Accessibility.
-        #expect(KeystrokeRules.accessibilityNote(mode: .always, accessibilityGranted: false, inputMonitoringGranted: true,
-                                                 tapProven: true) == nil)
-        // Allowed, not proven (waiting for its first key, or getting none until a relaunch, with no
-        // monitor to tell which): the note says what to do if nothing shows.
-        let hint = KeystrokeRules.accessibilityNote(mode: .always, accessibilityGranted: false, inputMonitoringGranted: true)
-        #expect(hint?.contains("If no keystrokes show") == true)
-        #expect(hint?.contains("quit and reopen TwinTake") == true)
-        #expect(KeystrokeRules.accessibilityNote(mode: .whileRecording, accessibilityGranted: false,
-                                                 inputMonitoringGranted: true)?.contains("If no keystrokes show") == true)
-        // Without Input Monitoring: Accessibility is the way.
-        #expect(KeystrokeRules.accessibilityNote(mode: .always, accessibilityGranted: false)?
-                    .contains("Keystrokes need Accessibility") == true)
-        // Off, or Accessibility allowed: no note either way.
-        #expect(KeystrokeRules.accessibilityNote(mode: .off, accessibilityGranted: false, inputMonitoringGranted: true) == nil)
-        #expect(KeystrokeRules.accessibilityNote(mode: .always, accessibilityGranted: true, inputMonitoringGranted: true) == nil)
+        #expect(KeystrokeRules.accessibilityNote(mode: .always, accessibilityGranted: false)
+                == "Keystrokes need Accessibility. Allow it under Permissions.")
+        // A tap that got a key press shows keystrokes, so no note.
+        #expect(KeystrokeRules.accessibilityNote(mode: .always, accessibilityGranted: false, tapProven: true) == nil)
+        #expect(KeystrokeRules.accessibilityNote(mode: .off, accessibilityGranted: false, tapProven: true) == nil)
+        #expect(KeystrokeRules.accessibilityNote(mode: .always, accessibilityGranted: true, tapProven: true) == nil)
     }
 
     /// The proven tap runs alone; a new tap runs next to the AppKit monitors until its first
@@ -151,11 +141,11 @@ import WindowTools
         #expect(KeystrokeRules.tapFailures(after: note, proven: false, refused: false, deaf: true) == note + 1)
     }
 
-    /// The tap is created only while keystrokes show and Input Monitoring is allowed (creating a key
-    /// tap without it makes macOS ask), at most every `tapRetryS`.
+    /// The tap is created only while keystrokes show and listening is allowed (creating a key tap
+    /// without it makes macOS ask), at most every `tapRetryS`.
     @Test func whenTheTapIsTried() {
         func tries(_ showing: Bool = true, granted: Bool = true, running: Bool = false, since: Double? = nil) -> Bool {
-            KeystrokeRules.shouldTryTap(showing: showing, inputMonitoringGranted: granted, tapRunning: running, sinceLastTryS: since)
+            KeystrokeRules.shouldTryTap(showing: showing, listenAllowed: granted, tapRunning: running, sinceLastTryS: since)
         }
         #expect(tries())
         #expect(!tries(granted: false))
@@ -165,37 +155,54 @@ import WindowTools
         #expect(tries(since: KeystrokeRules.tapRetryS))
         #expect(tries(since: 10))
         #expect(!tries(granted: false, since: 10))
-        // The running tap goes with Keystrokes Off or the permission taken away.
-        #expect(KeystrokeRules.keepsTap(showing: true, inputMonitoringGranted: true))
-        #expect(!KeystrokeRules.keepsTap(showing: true, inputMonitoringGranted: false))
-        #expect(!KeystrokeRules.keepsTap(showing: false, inputMonitoringGranted: true))
+        // Once the menu asks for a relaunch, each try fails the same way: tries get rarer.
+        let note = KeystrokeRules.tapFailuresBeforeRelaunchNote
+        #expect(KeystrokeRules.tapRetryInterval(failures: 0) == KeystrokeRules.tapRetryS)
+        #expect(KeystrokeRules.tapRetryInterval(failures: note - 1) == KeystrokeRules.tapRetryS)
+        #expect(KeystrokeRules.tapRetryInterval(failures: note) == 2 * KeystrokeRules.tapRetryS)
+        #expect(KeystrokeRules.tapRetryInterval(failures: note + 1) == 4 * KeystrokeRules.tapRetryS)
+        #expect(KeystrokeRules.tapRetryInterval(failures: 1000) == KeystrokeRules.tapRetryMaxS)
+        func triesAfter(_ failures: Int, since: Double) -> Bool {
+            KeystrokeRules.shouldTryTap(showing: true, listenAllowed: true, tapRunning: false, sinceLastTryS: since,
+                                        failures: failures)
+        }
+        #expect(!triesAfter(note, since: KeystrokeRules.tapRetryS))
+        #expect(triesAfter(note, since: 2 * KeystrokeRules.tapRetryS))
+        #expect(!triesAfter(1000, since: KeystrokeRules.tapRetryMaxS - 1))
+        #expect(triesAfter(1000, since: KeystrokeRules.tapRetryMaxS))
+        // The running tap goes with Keystrokes Off or Accessibility taken away.
+        #expect(KeystrokeRules.keepsTap(showing: true, listenAllowed: true))
+        #expect(!KeystrokeRules.keepsTap(showing: true, listenAllowed: false))
+        #expect(!KeystrokeRules.keepsTap(showing: false, listenAllowed: true))
     }
 
-    /// After two failed tries with Input Monitoring allowed, the menu asks for a relaunch, until a
-    /// tap proves itself.
+    /// Accessibility alone drives the tap: listen access without it (an old grant of its own) never
+    /// creates or keeps a tap, and asks for no relaunch.
+    @Test func listeningNeedsAccessibility() {
+        #expect(KeystrokeRules.listenAllowed(accessibilityGranted: true, listenAccess: true))
+        #expect(!KeystrokeRules.listenAllowed(accessibilityGranted: false, listenAccess: true))
+        #expect(!KeystrokeRules.listenAllowed(accessibilityGranted: true, listenAccess: false))
+        #expect(!KeystrokeRules.listenAllowed(accessibilityGranted: false, listenAccess: false))
+        let allowed = KeystrokeRules.listenAllowed(accessibilityGranted: false, listenAccess: true)
+        #expect(!KeystrokeRules.shouldTryTap(showing: true, listenAllowed: allowed, tapRunning: false, sinceLastTryS: nil))
+        #expect(!KeystrokeRules.keepsTap(showing: true, listenAllowed: allowed))
+        #expect(KeystrokeRules.tapRelaunchNote(showing: true, listenAllowed: allowed, tapProven: false, failures: 5) == nil)
+        #expect(KeystrokeRules.accessibilityNote(mode: .always, accessibilityGranted: false) != nil)
+    }
+
+    /// After two failed tries with listening allowed (refused, or a deaf tap at once), the menu asks
+    /// for a relaunch, until a tap proves itself.
     @Test func relaunchNote() {
         func note(_ showing: Bool = true, granted: Bool = true, proven: Bool = false, failures: Int) -> String? {
-            KeystrokeRules.tapRelaunchNote(showing: showing, inputMonitoringGranted: granted, tapProven: proven, failures: failures)
+            KeystrokeRules.tapRelaunchNote(showing: showing, listenAllowed: granted, tapProven: proven, failures: failures)
         }
         #expect(note(failures: 0) == nil)
         #expect(note(failures: 1) == nil)
-        #expect(note(failures: 2)?.contains("Quit and reopen TwinTake") == true)
+        #expect(note(failures: 2) == "Quit and reopen TwinTake to show shortcuts other apps own (CleanShot X's ⇧⌘4).")
+        #expect(note(failures: KeystrokeRules.tapFailures(after: 0, proven: false, refused: false, deaf: true)) != nil)
         #expect(note(granted: false, failures: 5) == nil)
         #expect(note(proven: true, failures: 5) == nil)
         #expect(note(false, failures: 5) == nil)
-    }
-
-    /// The caption under the arrow follows the tap that got a key press, else the permission, so
-    /// it never asks for Input Monitoring that is allowed (keystrokes not showing, a new tap) and
-    /// never says "on" next to the relaunch note.
-    @Test func sourceCaption() {
-        #expect(KeystrokeRules.sourceCaption(inputMonitoringGranted: true, tapProven: true).contains("Input Monitoring is on"))
-        // The menu's permission state can lag the tap: a proven tap wins.
-        #expect(KeystrokeRules.sourceCaption(inputMonitoringGranted: false, tapProven: true).contains("Input Monitoring is on"))
-        let allowed = KeystrokeRules.sourceCaption(inputMonitoringGranted: true, tapProven: false)
-        #expect(allowed.contains("Input Monitoring is allowed"))
-        #expect(!allowed.contains("Allow Input Monitoring") && !allowed.contains("is on"))
-        #expect(KeystrokeRules.sourceCaption(inputMonitoringGranted: false, tapProven: false).contains("Allow Input Monitoring"))
     }
 
     /// A key press from either source gets the same answer: TwinTake's own hotkeys mute (the tap
@@ -231,24 +238,40 @@ import WindowTools
     }
 }
 
-/// Input Monitoring is an optional permission: it only adds shortcuts other apps own.
-@Suite struct InputMonitoringPermissionTests {
-    @Test func optionalAndListed() {
-        #expect(PermissionKind.allCases.contains(.inputMonitoring))
-        #expect(!PermissionKind.inputMonitoring.isRequired)
-        for kind in PermissionKind.allCases where kind != .inputMonitoring { #expect(kind.isRequired, "\(kind)") }
-        #expect(PermissionKind.inputMonitoring.title == "Input Monitoring")
-        #expect(PermissionKind.inputMonitoring.settingsURL?.absoluteString
-                == "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")
-        #expect(PermissionKind.inputMonitoring.caption(.notGranted)
-                == "Optional, for showing shortcuts other apps own (e.g. ⇧⌘4) · Not allowed")
-        #expect(PermissionKind.camera.caption(.granted) == "For camera.mov · Allowed")
+/// The menu lists the four permissions the recorder needs. Accessibility also gives the keystroke
+/// tap its listen access, so the app has no permission row of its own for keys.
+@Suite struct PermissionListTests {
+    @Test func theFourPermissions() {
+        #expect(PermissionKind.allCases == [.camera, .microphone, .screenRecording, .accessibility])
+        #expect(PermissionKind.allCases.map(\.title) == ["Camera", "Microphone", "Screen Recording", "Accessibility"])
+        #expect(PermissionKind.accessibility.purpose == "snapping the window and keystrokes")
+        for kind in PermissionKind.allCases {
+            #expect(kind.settingsURL?.absoluteString.contains("ListenEvent") == false, "\(kind)")
+        }
     }
 
-    /// The Permissions section opens by itself only for a missing required permission.
-    @Test func menuOpensPermissionsOnlyForRequiredOnes() throws {
+    /// The Permissions section opens by itself when any permission is missing.
+    @Test func menuOpensPermissionsWhenOneIsMissing() throws {
         let code = try KeystrokeSourceTests.code("Sources/RecorderApp/MenuContentView.swift")
-        #expect(code.contains { $0.contains("PermissionKind.allCases.contains(where: { $0.isRequired && coordinator.permissions.state($0) != .granted })") })
+        #expect(code.contains { $0.contains("PermissionKind.allCases.contains(where: { coordinator.permissions.state($0) != .granted })") })
+        #expect(!code.contains { $0.contains("isRequired") })
+    }
+
+    /// No text in the app names Input Monitoring: TwinTake needs no entry there, because
+    /// Accessibility covers listening. Comments are not checked (`codeLines` drops them).
+    @Test func theAppNeverMentionsInputMonitoring() throws {
+        let sources = KeystrokeSourceTests.root.appendingPathComponent("Sources")
+        let folders = try FileManager.default.contentsOfDirectory(atPath: sources.path)
+        var found: [String] = []
+        for folder in folders {
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: sources.appendingPathComponent(folder).path)) ?? []
+            for name in names where name.hasSuffix(".swift") {
+                let lines = try KeystrokeSourceTests.code("Sources/\(folder)/\(name)")
+                if lines.contains(where: { $0.contains("Input Monitoring") }) { found.append("\(folder)/\(name)") }
+            }
+        }
+        #expect(folders.count >= 7)
+        #expect(found == [])
     }
 }
 
@@ -345,17 +368,18 @@ import WindowTools
         #expect(code.contains { $0.contains("proof = TapProof(startedAt: startedAt)") })
     }
 
-    /// The tap: created only after the Input Monitoring check (creating a key tap without it makes
-    /// macOS ask), listen only, at the session level, and its callback only hands off to the main
-    /// thread. It never logs.
-    @Test func theTapNeedsInputMonitoringAndOnlyListens() throws {
+    /// The tap: created only after the listen-access check (true with Accessibility; creating a key
+    /// tap without it makes macOS ask), listen only, at the session level, and its callback only
+    /// hands off to the main thread. It never logs.
+    @Test func theTapNeedsListenAccessAndOnlyListens() throws {
         let code = try Self.code("Sources/WindowTools/KeyEventTap.swift")
         let preflight = try #require(code.firstIndex { $0.contains("guard CGPreflightListenEventAccess() else { return nil }") })
         let create = try #require(code.firstIndex { $0.contains("CGEvent.tapCreate(") })
         #expect(preflight < create)
         #expect(code.filter { $0.contains("CGEvent.tapCreate(") }.count == 1)
-        #expect(code.contains { $0.contains("tap: .cgSessionEventTap, place: place, options: .listenOnly") })
-        #expect(code.contains { $0.contains("static func start(place: CGEventTapPlacement = .headInsertEventTap,") })
+        // At the tail: after other apps' session filters, so it sees the keys apps get.
+        #expect(code.contains { $0.contains("tap: .cgSessionEventTap, place: .tailAppendEventTap, options: .listenOnly") })
+        #expect(!code.contains { $0.contains(".headInsertEventTap") })
         #expect(!code.contains { $0.contains(".defaultTap") || $0.contains("CGRequestListenEventAccess") })
         for word in ["Logger", "print(", "os_log", "NSLog", ".log."] {
             #expect(!code.contains { $0.contains(word) }, "\(word)")
@@ -363,28 +387,38 @@ import WindowTools
         }
         let monitor = try Self.code("Sources/WindowTools/KeyMonitor.swift")
         #expect(monitor.contains { $0.contains("DispatchQueue.main.async { MainActor.assumeIsolated { self?.receivedTap(") })
-        // The only prompt for Input Monitoring is Permissions' request, which runs on a click.
-        var asks: [String] = []
-        for folder in ["Sources/RecorderApp", "Sources/WindowTools"] {
-            let names = try FileManager.default.contentsOfDirectory(atPath: Self.root.appendingPathComponent(folder).path)
+        // Nothing asks for a separate keyboard permission or reads its state: Accessibility, which
+        // the Permissions row asks for on a click, gives the tap its listen access.
+        let sources = Self.root.appendingPathComponent("Sources")
+        var found: [String] = []
+        for folder in try FileManager.default.contentsOfDirectory(atPath: sources.path) {
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: sources.appendingPathComponent(folder).path)) ?? []
             for name in names where name.hasSuffix(".swift") {
-                let lines = try Self.code("\(folder)/\(name)")
-                if lines.contains(where: { $0.contains("CGRequestListenEventAccess") }) { asks.append(name) }
+                for line in try Self.code("Sources/\(folder)/\(name)")
+                where ["CGRequestListenEventAccess", "IOHIDCheckAccess", "IOHIDRequestAccess", "IOKit.hidsystem"]
+                    .contains(where: { line.contains($0) }) {
+                    found.append("\(folder)/\(name): \(line.trimmingCharacters(in: .whitespaces))")
+                }
             }
         }
-        #expect(asks == ["Permissions.swift"])
-        let permissions = try Self.code("Sources/RecorderApp/Permissions.swift")
-        let request = try #require(permissions.firstIndex { $0.contains("func request(_ kind: PermissionKind) async {") })
-        let ask = try #require(permissions.firstIndex { $0.contains("CGRequestListenEventAccess()") })
-        let next = try #require(permissions[(request + 1)...].firstIndex { $0.contains("func ") })
-        #expect(request < ask && ask < next)
+        #expect(found == [])
+        // The tap and the key source go by the one check that never asks.
+        #expect(monitor.contains { $0.contains("public static var isListenAllowed: Bool { CGPreflightListenEventAccess() }") })
+        // The controller reads it only together with Accessibility (`KeystrokeRules.listenAllowed`).
+        let controller = try Self.code("Sources/RecorderApp/KeystrokeController.swift")
+        let reads = controller.filter { $0.contains("KeyMonitor.isListenAllowed") }
+        #expect(reads.count == 1)
+        #expect(reads.allSatisfy {
+            $0.contains("KeystrokeRules.listenAllowed(accessibilityGranted: trusted, listenAccess: KeyMonitor.isListenAllowed)")
+        })
+        #expect(controller.contains { $0.contains("let trusted = KeyMonitor.isTrusted") })
     }
 
     /// The menu trusts the tap only once it got a key press, and hears of the proof (or a deaf
     /// tap) at once, not at the next 3 s watch. Keystrokes stopping forgets a deaf tap.
     @Test func theMenuFollowsTheProvenTap() throws {
         let menu = try Self.code("Sources/RecorderApp/MenuContentView.swift")
-        #expect(menu.filter { $0.contains("tapProven: coordinator.keystrokeTapProven") }.count == 2)
+        #expect(menu.filter { $0.contains("tapProven: coordinator.keystrokeTapProven") }.count == 1)
         #expect(!menu.contains { $0.contains("keystrokeTapRunning") })
         let controller = try Self.code("Sources/RecorderApp/KeystrokeController.swift")
         let hook = try #require(controller.firstIndex { $0.contains("monitor.sourceChanged = {") })

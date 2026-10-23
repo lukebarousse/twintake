@@ -2,7 +2,7 @@ import AppKit
 import CoreGraphics
 import Foundation
 
-// The Input Monitoring key source: a listen-only Quartz event tap. It sees the keys of a shortcut
+// The event tap key source: a listen-only Quartz event tap. It sees the keys of a shortcut
 // another app owns as a global hotkey (CleanShot X's ⇧⌘4), which the AppKit global monitor never
 // gets: macOS gives a hotkey's key to the app that registered it, and global monitors only get
 // copies of the events routed to other apps. `KeyMonitor` runs this tap alone once it reported
@@ -53,7 +53,7 @@ extension KeyEventInfo {
 public enum KeySource: String, Sendable, Equatable {
     /// The AppKit global and local monitors (Accessibility).
     case monitors
-    /// The listen-only event tap (Input Monitoring).
+    /// The listen-only event tap (listen access, which Accessibility gives).
     case tap
 }
 
@@ -100,7 +100,7 @@ public struct KeyEventDeduper: Sendable {
 }
 
 /// Whether a new tap gets key presses. macOS can create a tap that gets no key presses until
-/// TwinTake is relaunched (after a fresh Input Monitoring grant), and such a tap can still get
+/// TwinTake is relaunched (after a fresh Accessibility grant), and such a tap can still get
 /// modifier changes. So only a key press proves the tap, and the AppKit monitors stay until one
 /// comes. When the monitors report `deafAfterMonitorKeyDowns` key presses first, the tap gets
 /// none, and it is removed: keystrokes never lose their source.
@@ -204,16 +204,16 @@ public enum KeyTapMask {
 /// placed by a process running as root (others get NULL), so a normal app uses the session tap.
 /// The session tap sees events where they enter the login session, before macOS routes them to an
 /// app and before it matches global hotkeys, so a key another app's hotkey takes still reaches it.
-/// It also honours secure keyboard entry like the rest of the session. By default it is inserted
-/// at the head of the session's taps (`kCGHeadInsertEventTap`), before other apps' session
-/// filters: it sees the keys as typed, also when a key remapper's tap (a Hyper key tool) changes
-/// or swallows them later. `KeyMonitor.tapPlacement` can put it at the tail instead, after those
-/// filters, to see what apps get (a device check decides which one stays).
+/// It also honours secure keyboard entry like the rest of the session. It goes at the tail of the
+/// session's taps (`kCGTailAppendEventTap`), after other apps' session filters, so it sees the
+/// keys as apps get them, also after a key remapper (a Hyper key tool) changed them. On device it
+/// still gets the key of another app's hotkey (CleanShot X's ⇧⌘4).
 ///
 /// **Listen only (`kCGEventTapOptionListenOnly`).** It never changes, holds back or delays an
 /// event: a slow listener does not hold up typing (an active filter would, for every app). A
-/// listen-only key tap needs Input Monitoring (`CGPreflightListenEventAccess`); `start` creates
-/// nothing without it, because creating one without it makes macOS ask.
+/// listen-only key tap needs listen access (`CGPreflightListenEventAccess`, true with
+/// Accessibility); `start` creates nothing without it, because creating one without it makes macOS
+/// ask.
 ///
 /// **Threads.** The tap is created on the main thread (one quick call to the window server) and
 /// runs on its own thread's run loop, so a busy main thread never makes macOS turn it off. The
@@ -246,19 +246,16 @@ final class KeyEventTap {
 
     deinit { box.stop() }
 
-    /// Creates the tap and starts its thread. Nil, with nothing created, without Input Monitoring
-    /// or when macOS gives no working tap (after a grant it can need a relaunch).
-    /// - Parameters:
-    ///   - place: head (the default) or tail of the session's taps.
-    ///   - deliver: runs on the tap's thread for each event; it must only hand off.
-    static func start(place: CGEventTapPlacement = .headInsertEventTap,
-                      deliver: @escaping @Sendable (Event) -> Void) -> KeyEventTap? {
-        // Never without Input Monitoring: creating a key tap without it makes macOS ask.
+    /// Creates the tap and starts its thread. Nil, with nothing created, without listen access or
+    /// when macOS gives no working tap (after a fresh grant it can need a relaunch).
+    /// - Parameter deliver: runs on the tap's thread for each event; it must only hand off.
+    static func start(deliver: @escaping @Sendable (Event) -> Void) -> KeyEventTap? {
+        // Never without listen access: creating a key tap without it makes macOS ask.
         guard CGPreflightListenEventAccess() else { return nil }
         let box = TapBox(deliver: deliver)
         let before = listedTaps()
         guard let port = CGEvent.tapCreate(
-            tap: .cgSessionEventTap, place: place, options: .listenOnly,
+            tap: .cgSessionEventTap, place: .tailAppendEventTap, options: .listenOnly,
             eventsOfInterest: KeyTapMask.wanted,
             callback: keyTapCallback,
             userInfo: Unmanaged.passUnretained(box).toOpaque()) else { return nil }

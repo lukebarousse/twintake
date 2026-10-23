@@ -31,7 +31,7 @@ struct MenuContentView: View {
 
     private func menuOpened() {
         coordinator.permissions.refresh()
-        if PermissionKind.allCases.contains(where: { $0.isRequired && coordinator.permissions.state($0) != .granted }) {
+        if PermissionKind.allCases.contains(where: { coordinator.permissions.state($0) != .granted }) {
             showPermissions = true
         }
     }
@@ -684,8 +684,7 @@ private struct PermissionsPanel: View {
                     Image(systemName: kind.systemImage).frame(width: 20)
                     VStack(alignment: .leading, spacing: 0) {
                         Text(kind.title)
-                        Text(kind.caption(state)).font(.caption).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                        Text("For \(kind.purpose) · \(state.label)").font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
                     if state == .granted {
@@ -705,9 +704,8 @@ private struct PermissionsPanel: View {
                     }
                 }
             }
-            Text("After you allow Screen Recording, quit and reopen TwinTake. Input Monitoring can need it too: "
-                 + "the Keystrokes row says so.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text("After you allow Screen Recording, quit and reopen TwinTake.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 }
@@ -878,10 +876,8 @@ private struct KeystrokeSettingsRow: View {
 
     var body: some View {
         @Bindable var settings = coordinator.settings
-        let inputMonitoring = coordinator.permissions.state(.inputMonitoring) == .granted
         let note = KeystrokeRules.accessibilityNote(mode: settings.keystrokeMode,
                                                     accessibilityGranted: coordinator.permissions.state(.accessibility) == .granted,
-                                                    inputMonitoringGranted: inputMonitoring,
                                                     tapProven: coordinator.keystrokeTapProven)
             ?? (settings.keystrokeMode == .off ? nil : coordinator.keystrokeSecureInputNote ?? coordinator.keystrokeTapNote)
         VStack(alignment: .leading, spacing: 8) {
@@ -922,9 +918,6 @@ private struct KeystrokeSettingsRow: View {
                     }
                     Text("Auto uses Windows names (Ctrl+Shift+P) while a Parallels VM is in front, else Mac symbols (⇧⌘P). "
                          + "Typed text, ⇧ with a letter and secure fields never show.")
-                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    Text(KeystrokeRules.sourceCaption(inputMonitoringGranted: inputMonitoring,
-                                                      tapProven: coordinator.keystrokeTapProven))
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.leading, 18)

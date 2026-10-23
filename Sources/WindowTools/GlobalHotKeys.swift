@@ -194,7 +194,7 @@ public enum HotKeyError: Error, Equatable, Sendable, LocalizedError {
 private let hotKeySignature: OSType = 0x5652_484B
 
 /// Global hotkeys through Carbon `RegisterEventHotKey`. They work while any app is frontmost
-/// and need no permission (unlike an event tap, which needs Input Monitoring).
+/// and need no permission (unlike an event tap, which needs listen access).
 ///
 /// Handlers run on the main actor. Keep one instance for the app's lifetime; call
 /// `unregisterAll()` before releasing it.
