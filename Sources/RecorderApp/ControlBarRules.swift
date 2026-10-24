@@ -218,6 +218,29 @@ enum ControlBarRules {
     /// "1 flag", "3 flags".
     static func flagSummary(_ count: Int) -> String { count == 1 ? "1 flag" : "\(count) flags" }
 
+    /// The bar shows tooltips only while no take runs. It sits just above the frame, where the
+    /// pointer often rests during a take, and a tooltip popping up there distracts (Luke, 2026-10-23).
+    static func showsTooltips(state: SessionCoordinator.State) -> Bool {
+        switch state {
+        case .preparing, .recording, .stopping: false
+        case .idle, .error: true
+        }
+    }
+
+    /// A pinned app's button help: a few words.
+    static func appHelp(name: String, running: Bool) -> String {
+        running ? "Snap \(name) into the frame" : "Open \(name) and snap it into the frame"
+    }
+
+    /// The + button's help: a few words.
+    /// - Parameters:
+    ///   - candidate: the front app's name, when it can be pinned; nil when there is none.
+    ///   - pinned: the candidate is already on the bar.
+    static func pinHelp(candidate: String?, pinned: Bool) -> String {
+        guard let candidate else { return "Pin the front app" }
+        return pinned ? "\(candidate) is pinned" : "Pin \(candidate)"
+    }
+
     /// The Flag button's help.
     static func flagHelp(recording: Bool, lookbackS: Int, shortcut: String = HotKey.flag.displayString) -> String {
         let what = "Flag a mistake in the last \(lookbackLabel(lookbackS)) (\(shortcut))."

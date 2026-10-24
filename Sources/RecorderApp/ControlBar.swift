@@ -242,6 +242,8 @@ struct ControlBarContent: Equatable {
     var replayHelp: String
     var meterShown: Bool
     var flash: ControlBarFlash?
+    /// The buttons have tooltips (`ControlBarRules.showsTooltips`).
+    var tooltips: Bool
 
     @MainActor
     init(coordinator c: SessionCoordinator, presence: AppPresence) {
@@ -257,13 +259,9 @@ struct ControlBarContent: Equatable {
         apps = split.visible.map(state)
         overflow = split.overflow.map(state)
         // `presence.front` was read above, so the help follows the front app.
-        if let candidate = c.pinCandidate() {
-            pinHelp = pinned.contains(where: { $0.bundleID == candidate.bundleID })
-                ? "\(candidate.name) is pinned. Click another app, then + to pin it."
-                : "Pin \(candidate.name): one click on its button then brings it forward and snaps it into the frame."
-        } else {
-            pinHelp = "Click the app you want to pin, then +."
-        }
+        let candidate = c.pinCandidate()
+        pinHelp = ControlBarRules.pinHelp(candidate: candidate?.name,
+                                          pinned: pinned.contains(where: { $0.bundleID == candidate?.bundleID }))
         let recording = c.state == .recording
         flagEnabled = recording
         flagHelp = ControlBarRules.flagHelp(recording: recording, lookbackS: c.settings.flagLookbackSeconds)
@@ -273,6 +271,7 @@ struct ControlBarContent: Equatable {
         replayHelp = ReplayRules.help(replay, shown: replayShown)
         meterShown = c.controlBarShowsMeter
         flash = c.controlBarFlash
+        tooltips = ControlBarRules.showsTooltips(state: c.state)
     }
 }
 
@@ -435,7 +434,6 @@ final class ControlBarView: NSView {
         record.action = #selector(recordClicked)
 
         overflowButton.setSymbol("chevron.down", size: 10)
-        overflowButton.toolTip = "More pinned apps"
         overflowButton.target = self
         overflowButton.action = #selector(overflowClicked)
         overflowButton.isHidden = true
@@ -472,7 +470,9 @@ final class ControlBarView: NSView {
                          ? .systemRed : nil)
         record.fill = Self.fill(for: look.tone)
         record.isEnabled = look.enabled
-        record.toolTip = look.help
+        // No tooltips during a take (`ControlBarRules.showsTooltips`).
+        func tip(_ text: String) -> String? { content.tooltips ? text : nil }
+        record.toolTip = tip(look.help)
         record.setAccessibilityLabel(look.title)
 
         let apps = content.apps.map(\.app)
@@ -480,22 +480,21 @@ final class ControlBarView: NSView {
         for (state, entry) in zip(content.apps, appButtons) {
             entry.button.dimmed = !state.running
             entry.button.selected = state.front
-            entry.button.toolTip = state.running
-                ? "\(state.app.name): bring it forward and snap its front window into the frame."
-                : "\(state.app.name) is not running. Click to open it and snap it into the frame."
+            entry.button.toolTip = tip(ControlBarRules.appHelp(name: state.app.name, running: state.running))
         }
         overflowApps = content.overflow
         overflowButton.isHidden = content.overflow.isEmpty
         overflowButton.selected = content.overflow.contains(where: \.front)
+        overflowButton.toolTip = tip("More pinned apps")
 
-        pinButton.toolTip = content.pinHelp
+        pinButton.toolTip = tip(content.pinHelp)
         flagButton.isEnabled = content.flagEnabled
-        flagButton.toolTip = content.flagHelp
+        flagButton.toolTip = tip(content.flagHelp)
         replayButton.isEnabled = content.replayEnabled
         replayButton.selected = content.replayShown
-        replayButton.toolTip = content.replayHelp
+        replayButton.toolTip = tip(content.replayHelp)
         meter.isHidden = !content.meterShown
-        meter.toolTip = "Mac mic"
+        meter.toolTip = tip("Mac mic")
 
         if let flash = content.flash {
             flashView.show(flash.text, fill: Self.fill(for: flash.tone, flash: true))

@@ -1,6 +1,6 @@
 # First real test run
 
-Unit tests cover the logic (858 tests: `swift test`). These checks need real devices.
+Unit tests cover the logic (860 tests: `swift test`). These checks need real devices.
 
 ## Before you start
 
@@ -144,6 +144,7 @@ Laptop with the 16:9 frame at the bottom, Parallels Desktop (Windows 11 VM) and 
 11. **Mac mic meter:** with the camera window on (or Live preview on with the menu open), talk: the thin vertical meter at the right end of the bar moves with your voice (green, yellow above -12 dBFS). Hide the window and close the menu: the meter goes away within about 2 s, and the bar does not move. Record in Screen mode: the meter moves while recording.
 12. **Position persists per display:** drag the bar to a place on the laptop, then to the PHL; quit and reopen: it opens on the PHL where you left it. Drag it back to the laptop, quit and reopen: it opens at its laptop place. Unplug the PHL while the bar is on it: the bar moves to the laptop, at its laptop place, inside the visible area. Change the laptop resolution (System Settings > Displays): the bar stays fully on screen. Right-click > Move to the Default Place puts it back in the strip above the frame.
 13. **Hide:** turn off the switch next to Control Bar in the menu: the bar hides. Turn it on: it comes back at its place. Right-click the bar > Hide Control Bar: the switch turns off. Quit with the bar off and reopen: it stays off.
+14. **No tooltips during a take:** idle, rest the pointer on a pinned app button: a short tooltip shows ("Snap Dia into the frame"). Start a take and rest the pointer on each button: no tooltip shows. After Stop, tooltips show again.
 
 ## Replay
 

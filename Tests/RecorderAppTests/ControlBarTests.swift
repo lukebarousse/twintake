@@ -208,6 +208,31 @@ import WindowTools
         #expect(Rules.flagHelp(recording: true, lookbackS: 180) == "Flag a mistake in the last 3 min (⌃⌥⌘B).")
         #expect(Rules.flagHelp(recording: false, lookbackS: 180).hasSuffix("Works while recording."))
     }
+
+    /// No tooltips pop up over the frame during a take; short ones while idle.
+    @Test func tooltips() {
+        #expect(Rules.showsTooltips(state: .idle))
+        #expect(Rules.showsTooltips(state: .error("x")))
+        #expect(!Rules.showsTooltips(state: .preparing))
+        #expect(!Rules.showsTooltips(state: .recording))
+        #expect(!Rules.showsTooltips(state: .stopping))
+        #expect(Rules.appHelp(name: "Dia", running: true) == "Snap Dia into the frame")
+        #expect(Rules.appHelp(name: "Dia", running: false) == "Open Dia and snap it into the frame")
+        #expect(Rules.pinHelp(candidate: nil, pinned: false) == "Pin the front app")
+        #expect(Rules.pinHelp(candidate: "Dia", pinned: true) == "Dia is pinned")
+        #expect(Rules.pinHelp(candidate: "Dia", pinned: false) == "Pin Dia")
+    }
+
+    /// Every tooltip the bar sets goes through the rule, so none shows during a take.
+    @Test func everyBarTooltipFollowsTheRule() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let code = try String(contentsOf: root.appendingPathComponent("Sources/RecorderApp/ControlBar.swift"), encoding: .utf8)
+            .components(separatedBy: "\n")
+        let sets = code.filter { $0.contains(".toolTip = ") && !$0.contains("item.toolTip") }
+        #expect(!sets.isEmpty)
+        for line in sets { #expect(line.contains("= tip("), "\(line)") }
+    }
 }
 
 @MainActor

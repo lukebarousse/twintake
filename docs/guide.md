@@ -170,7 +170,7 @@ TwinTake has a snap profile for Parallels Desktop. With **Hide the Parallels too
   <img src="images/control-bar.png" alt="The control bar during a take: Stop with the elapsed time, two pinned apps and +, Flag, Replay and the Mac mic meter" width="500">
 </p>
 
-A small floating bar shows while TwinTake runs, idle and recording. It is never recorded and never takes the focus from your app. Left to right:
+A small floating bar shows while TwinTake runs, idle and recording. It is never recorded and never takes the focus from your app. Its buttons show short tooltips only while nothing records, so nothing pops up over the frame during a take. Left to right:
 
 1. **Record / Stop** with the elapsed time.
 2. **Pinned apps**, one button for each app, then **+**.
