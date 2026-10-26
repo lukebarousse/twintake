@@ -288,7 +288,7 @@ enum MeasuredTake {
         #expect(!old.contains("confirmed"))
         let legacy = try SessionManifest.decoder().decode(TrackInfo.self, from: Data(old.utf8))
         #expect(legacy.micSource?.confirmed == nil && legacy.micSource?.verdict == .externalMic)
-        #expect(SessionManifest.currentSchemaVersion == "1.6")
+        #expect(SessionManifest.currentSchemaVersion.hasPrefix("1."))
     }
 
     /// While the replay's sound plays, its sound in the mics is no evidence: no warning, no

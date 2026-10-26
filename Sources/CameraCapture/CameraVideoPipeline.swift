@@ -27,6 +27,9 @@ struct CameraVideoResult: Sendable, Equatable {
     /// Frames of another size than the file's first frame (the camera changed its signal). Not
     /// written: their slots repeat the last picture of the file's size.
     var otherSizeFrames: Int64 = 0
+    /// Frames that brought no new picture on arrival, and frames that changed after they arrived
+    /// (`RepeatedFrameCounter`).
+    var frameCheck = RepeatedFrameCounter()
 
     /// The manifest's `dropped_frames`: slots that had to repeat a picture while frames came in
     /// (the camera or the encoder missed a frame), and frames that came too late for their slot.
@@ -46,6 +49,11 @@ struct CameraVideoResult: Sendable, Equatable {
 /// start is slot 0 and fixes t0; frames before it are never in the file. The delegate never
 /// blocks: at most `maxWaitingFrames` new frames wait for the encoder, and a frame beyond that is
 /// written as a repeat of the newest waiting one, so the capture's buffer pool never runs dry.
+///
+/// Every frame of the file is fingerprinted on arrival, each new frame again right before its write,
+/// and the last written frame once more when the next new frame replaces it (`RepeatedFrameCounter`):
+/// 1024 bytes read in place each time, nothing copied, no buffer kept longer, nothing that changes
+/// what is written.
 final class CameraVideoPipeline: @unchecked Sendable {
     /// The stall timer repeats the last picture up to this far behind real time, so a camera that
     /// stops sending frames still fills the file in real time and a crash loses at most a fragment.
@@ -76,6 +84,15 @@ final class CameraVideoPipeline: @unchecked Sendable {
         let slot: Int64
         let frame: CVPixelBuffer
         let isNew: Bool
+        /// The new frame's fingerprint at arrival, checked again right before the write. Nil for
+        /// a repeat (the same buffer again) or a frame the check cannot read.
+        var fingerprint: FrameFingerprint? = nil
+    }
+
+    /// `lastFrame` after the writer took it: its slot and its fingerprint at the write.
+    private struct WrittenFrame {
+        let slot: Int64
+        let fingerprint: FrameFingerprint
     }
 
     let queue: DispatchQueue
@@ -107,6 +124,17 @@ final class CameraVideoPipeline: @unchecked Sendable {
     /// Width and height of the file's frames, fixed by its first frame.
     private var fileFrameSize: (width: Int, height: Int)?
     private var otherSizeFrames: Int64 = 0
+    /// The repeated-frame check of this file, and where it reads in the frames.
+    private var frameCheck = RepeatedFrameCounter()
+    private var fingerprintGrid: FingerprintGrid?
+    /// The sampled values of this arrival and of the one before, for the near-repeat measure.
+    private var samples = FrameSamples()
+    private var previousSamples = FrameSamples()
+    /// Set once the writer took `lastFrame` as a new frame; checked when it is replaced or released.
+    private var lastFrameWritten: WrittenFrame?
+    /// One warning per file for each kind of changed frame. (The repeat warning is decided at Stop.)
+    private var warnedChanges = false
+    private var warnedHeldChanges = false
     private var timer: DispatchSourceTimer?
     private var stopRequested = false
     private var finishing = false
@@ -185,12 +213,14 @@ final class CameraVideoPipeline: @unchecked Sendable {
         }
         let placement = grid.place(correctedNs: corrected)
         slotter = grid
+        // Every frame of the file's span counts, written or not: the check is about what arrives.
+        let fingerprint = placement == .afterEnd ? nil : checkArrival(frame)
         switch placement {
         case let .write(slot, repeats):
             status.withLock { $0.lastWrittenArrivalNs = arrivalNs }
             meter.add(ptsNs: ptsNs, arrivalNs: arrivalNs)
             if repeats > 0 { enqueueRepeats(from: slot - repeats, count: repeats) }
-            enqueue(slot: slot, frame: frame, isNew: true)
+            enqueue(slot: slot, frame: frame, isNew: true, fingerprint: fingerprint)
             if grid.isComplete { status.withLock { $0.reachedEnd = true } }
         case .afterEnd:
             status.withLock { $0.reachedEnd = true }
@@ -278,6 +308,7 @@ final class CameraVideoPipeline: @unchecked Sendable {
     func releaseFrames() async {
         await queue.run { [self] in
             lastFrame = nil
+            lastFrameWritten = nil
             backlog.removeAll()
             waitingNewFrames = 0
             timer?.cancel()
@@ -309,6 +340,12 @@ final class CameraVideoPipeline: @unchecked Sendable {
         writerBusyFrames = 0
         fileFrameSize = nil
         otherSizeFrames = 0
+        frameCheck = RepeatedFrameCounter()
+        samples.valid = false
+        previousSamples.valid = false
+        lastFrameWritten = nil
+        warnedChanges = false
+        warnedHeldChanges = false
         stopRequested = false
         finishing = false
         inputFinished = false
@@ -334,7 +371,8 @@ final class CameraVideoPipeline: @unchecked Sendable {
         timing.setOrigin(origin)
         fileFrameSize = (CVPixelBufferGetWidth(frame), CVPixelBufferGetHeight(frame))
         meter.add(ptsNs: ptsNs, arrivalNs: arrivalNs)
-        enqueue(slot: 0, frame: frame, isNew: true)
+        let fingerprint = checkArrival(frame)
+        enqueue(slot: 0, frame: frame, isNew: true, fingerprint: fingerprint)
         drain()
         status.withLock {
             $0.began = true
@@ -372,16 +410,70 @@ final class CameraVideoPipeline: @unchecked Sendable {
         startTimer()
     }
 
-    private func enqueue(slot: Int64, frame: CVPixelBuffer, isNew: Bool) {
+    private func enqueue(slot: Int64, frame: CVPixelBuffer, isNew: Bool, fingerprint: FrameFingerprint? = nil) {
         if isNew, waitingNewFrames >= Self.maxWaitingFrames, let last = lastFrame {
             // The encoder is behind: hold no more capture buffers, repeat the newest waiting one.
             writerBusyFrames += 1
             backlog.append(Write(slot: slot, frame: last, isNew: false))
             return
         }
-        backlog.append(Write(slot: slot, frame: frame, isNew: isNew))
+        backlog.append(Write(slot: slot, frame: frame, isNew: isNew, fingerprint: isNew ? fingerprint : nil))
         if isNew { waitingNewFrames += 1 }
+        checkHeld()
         lastFrame = frame
+    }
+
+    /// Fingerprints a frame that arrived during the file and counts it (`RepeatedFrameCounter`),
+    /// with how much it changed from the frame before and which buffer it came in. Read only: the
+    /// frame is neither copied nor kept. The repeat warning is decided on the totals at Stop
+    /// (`CameraTrackReport.repeatWarning`).
+    private func checkArrival(_ frame: CVPixelBuffer) -> FrameFingerprint? {
+        let fingerprint = FrameFingerprinter.fingerprint(frame, grid: &fingerprintGrid, samples: &samples.values)
+        samples.valid = fingerprint != nil
+        let difference = samples.valid && previousSamples.valid
+            ? SampleDifference(samples.values, previousSamples.values) : nil
+        swap(&samples, &previousSamples)
+        let buffer = FrameBufferID(frame)
+        frameCheck.arrived(fingerprint, difference: difference, buffer: buffer, held: holds(buffer))
+        return fingerprint
+    }
+
+    /// True when `buffer` is one this pipeline still holds: the last frame or a waiting one.
+    private func holds(_ buffer: FrameBufferID) -> Bool {
+        if let lastFrame, FrameBufferID(lastFrame) == buffer { return true }
+        return backlog.contains { FrameBufferID($0.frame) == buffer }
+    }
+
+    /// A new frame right before the writer takes it: its content must still be what arrived.
+    /// Logs one warning per file the first time it is not. Returns its fingerprint now.
+    private func checkBeforeWrite(_ write: Write) -> FrameFingerprint? {
+        guard write.isNew, let atArrival = write.fingerprint else { return nil }
+        let now = FrameFingerprinter.fingerprint(write.frame, grid: &fingerprintGrid)
+        guard frameCheck.beforeWrite(atArrival: atArrival, now: now), !warnedChanges else { return now }
+        warnedChanges = true
+        events?.append(.warning, [
+            "source": "camera", "file": SessionFolder.cameraFileName, "track": TrackInfo.Role.cameraVideo.rawValue,
+            "message": RepeatedFrameRule.changedBeforeWriteWarning,
+            "changed_before_write": String(frameCheck.changedBeforeWrite), "slot": String(write.slot),
+        ])
+        return now
+    }
+
+    /// The last written frame, still held, right before the pipeline lets go of it (the next new
+    /// frame replaces it, about a frame later, or the file ends): its content must still be what
+    /// the writer took. The encoder reads it after the append, so this covers that time. Logs one
+    /// warning per file the first time it is not.
+    private func checkHeld() {
+        guard let frame = lastFrame, let written = lastFrameWritten else { return }
+        lastFrameWritten = nil
+        let now = FrameFingerprinter.fingerprint(frame, grid: &fingerprintGrid)
+        guard frameCheck.whileHeld(atWrite: written.fingerprint, now: now), !warnedHeldChanges else { return }
+        warnedHeldChanges = true
+        events?.append(.warning, [
+            "source": "camera", "file": SessionFolder.cameraFileName, "track": TrackInfo.Role.cameraVideo.rawValue,
+            "message": RepeatedFrameRule.changedWhileHeldWarning,
+            "changed_while_held": String(frameCheck.changedWhileHeld), "slot": String(written.slot),
+        ])
     }
 
     private func enqueueRepeats(from first: Int64, count: Int64) {
@@ -435,11 +527,13 @@ final class CameraVideoPipeline: @unchecked Sendable {
         while input.isReadyForMoreMediaData, !backlog.isEmpty {
             let write = backlog.removeFirst()
             if write.isNew { waitingNewFrames -= 1 }
+            let written = checkBeforeWrite(write)
             if !adaptor.append(write.frame, withPresentationTime: frameRate.time(ofFrame: write.slot)) {
                 appendFailed = true
                 break
             }
             appendedSlots += 1
+            if let written, write.frame === lastFrame { lastFrameWritten = WrittenFrame(slot: write.slot, fingerprint: written) }
         }
         if finishing && (appendFailed || backlog.isEmpty) {
             markFinished()
@@ -457,6 +551,7 @@ final class CameraVideoPipeline: @unchecked Sendable {
         inputFinished = true
         timer?.cancel()
         timer = nil
+        checkHeld()
         if let input, writer?.status == .writing { input.markAsFinished() }
         let clean = !appendFailed && !timedOut
         let grid = slotter
@@ -467,6 +562,7 @@ final class CameraVideoPipeline: @unchecked Sendable {
             stats: grid?.stats ?? CameraGridStats())
         result.writerBusyFrames = writerBusyFrames
         result.otherSizeFrames = otherSizeFrames
+        result.frameCheck = frameCheck
         result.ptsFps = meter.ptsFps
         result.arrivalFps = meter.arrivalFps
         result.rateMismatch = meter.mismatch
@@ -477,6 +573,7 @@ final class CameraVideoPipeline: @unchecked Sendable {
         // The next take counts the frames between this file and its own.
         preStartFrames = 0
         lastFrame = nil
+        lastFrameWritten = nil
         backlog.removeAll()
         waitingNewFrames = 0
         status.withLock { $0.armed = false }

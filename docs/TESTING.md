@@ -1,6 +1,6 @@
 # First real test run
 
-Unit tests cover the logic (860 tests: `swift test`). These checks need real devices.
+Unit tests cover the logic (892 tests: `swift test`). These checks need real devices.
 
 ## Before you start
 
@@ -113,6 +113,12 @@ camera.mov is written on an exact 24000/1001 grid that follows real time, and bo
 10. **`kill -9` during a take:** camera.mov plays up to its last fragment (at most 2 s lost).
 11. **End of the dialogue track:** say a word right up to Stop. The camera mic (camera.mov A1) has the sound up to the last video frame, not a short silence after it.
 12. **Startup drops:** `dropped_frames` does not count camera frames from before the file began (`frames_before_start` does).
+13. **Repeated frames:** camera at 4K 24p. Record 30 s in Camera or Both mode, and wave a hand in front of the camera for the first 10 s. In session.json camera_video, `frames_checked` is about 719 (30 s at 23.976). Report `unique_frame_ratio`, `repeated_on_arrival`, `near_repeat_on_arrival`, `longest_repeat_run`, `short_run_repeats`, `same_buffer_repeats`, `held_buffer_arrivals`, `changed_before_write`, `changed_while_held`, and `difference_buckets` from `track_stop`:
+    - About 0.57 (`repeated_on_arrival` about 43%, `longest_repeat_run` 3) with `same_buffer_repeats` near 0: the camera or the Cam Link sends the same picture again in new buffers. events.jsonl has one `warning` at Stop, "The camera sends the same picture again in 43% of frames: …", and the menu's Saved line says "camera.mov looks choppy: …".
+    - Repeats mostly in `same_buffer_repeats`, or `held_buffer_arrivals` above 0: macOS's capture stack or the driver repeats the buffers. The warning says "macOS delivers the same camera buffer again …".
+    - `near_repeat_on_arrival` about 43% instead (most of `difference_buckets` in the first count): the camera repeats pictures, but not bit-exactly. Treat it like the first case.
+    - `repeated_on_arrival` and `near_repeat_on_arrival` both near 0, and `changed_before_write` and `changed_while_held` both 0: every frame arrived new and stayed as it arrived until about one frame after its write. Then the repeats come later, in the encoder or in playback. Report the take.
+    - `changed_before_write` or `changed_while_held` above 0: something overwrote frames TwinTake held. events.jsonl has a `warning` "Camera frames changed …" with the slot. Report the take.
 
 ## Menu
 

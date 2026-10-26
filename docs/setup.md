@@ -67,6 +67,7 @@ For the a6600, plug the external mic into the camera's MIC jack. The camera then
 The Cam Link 4K sends uncompressed video, so it needs a USB 3 link (5 Gb/s or more).
 
 - Plug the capture card into a USB 3 port. A USB 2 port, hub, cable or adapter can drop the link to USB 2.
+- Plug it into a port on the Mac, or into a dock's Thunderbolt port (with a USB-C to USB-A adapter). A dock's USB-A port can share one USB controller with other devices. At 4K the Cam Link 4K then gets about half the bandwidth it needs, and it sends each picture twice: camera.mov shows about 12 new pictures per second and looks choppy. The link still reads 5 Gb/s, and 1080p looks fine. Tested on a CalDigit dock: its USB-A port repeated 49% of frames, its Thunderbolt port and the Mac's own port 0%.
 - After an HDMI change, the Cam Link 4K once came back on its USB 2 lane. It still offered 4K but sent empty frames (a solid green picture). TwinTake detects this: a red banner says "Cam Link is connected at USB 2 speed." and Start is blocked. Unplug the Cam Link and plug it back in. See [troubleshooting.md](troubleshooting.md#the-preview-is-green-or-empty).
 - To check the link, open events.jsonl of a take. TwinTake logs a `usb_link` event at each Start, for example `"usb":"3"` and `"speed_mbps":"5000"`.
 

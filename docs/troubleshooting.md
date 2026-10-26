@@ -4,6 +4,7 @@ Start with the menu. Each red item blocks Start, and each orange item is a warni
 
 - [The preview is green or empty](#the-preview-is-green-or-empty)
 - [The Signal line says 1080p](#the-signal-line-says-1080p)
+- [camera.mov looks choppy](#cameramov-looks-choppy)
 - [Mic warnings](#mic-warnings)
 - [Menu bar indicators](#menu-bar-indicators)
 - [Start is blocked](#start-is-blocked)
@@ -62,6 +63,16 @@ Other Signal lines:
 - A Cam Link on USB 2 is blocked at 1080p too, because it sends uncompressed video.
 
 If the signal changes during a take, the icon turns orange. camera.mov keeps the size and the rate it started with, so it misses or repeats frames after the change. Stop, then start again.
+
+## camera.mov looks choppy
+
+The Saved line says "camera.mov looks choppy: NN% of its frames repeat." The camera picture moves in steps, while screen.mov is smooth. The file's timing is correct, but the capture card sent the same picture again in many frames.
+
+1. Plug the capture card into a port on the Mac, or into a dock's Thunderbolt port. A dock's or hub's USB-A port can share one USB controller with other devices, and at 4K the Cam Link 4K then repeats about half of its frames. See [Capture card on USB 3](setup.md#capture-card-on-usb-3).
+2. Record a short take and check the Saved line again. session.json shows the share in the camera video track: `repeated_on_arrival` and `unique_frame_ratio`.
+3. If it still repeats, set the camera's HDMI output to 1080p for a test. If 1080p is smooth and 4K is not, the USB path is too slow for 4K.
+
+A still picture (a slide, a paused camera) repeats in long runs. TwinTake logs it in events.jsonl but shows no note.
 
 ## Mic warnings
 

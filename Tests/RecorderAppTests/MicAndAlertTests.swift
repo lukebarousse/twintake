@@ -178,6 +178,44 @@ private struct Take {
             .hasPrefix("Part of camera.mov") == true)
         #expect(CaptureAlerts.lastTakeMicNote(report(.externalMic, seen: [.externalMic], silent: true)) != nil)
     }
+
+    /// The last take's line says when repeated pictures made camera.mov choppy (1.7), with who
+    /// repeated them, and when frames changed after they arrived. A still picture gets no note.
+    @Test func theLastTakeSaysWhenCameraFramesRepeat() throws {
+        func track(checked: Int?, repeated: Int?, shortRun: Int? = nil, sameBuffer: Int? = 0,
+                   changed: Int? = 0, held: Int? = 0) -> TrackInfo {
+            var t = TrackInfo(file: "camera.mov", trackIndex: 0, role: .cameraVideo, dialogue: false)
+            t.frameRate = .fps23_976
+            t.framesChecked = checked
+            t.repeatedOnArrival = repeated
+            t.shortRunRepeats = shortRun ?? repeated
+            t.sameBufferRepeats = sameBuffer
+            t.changedBeforeWrite = changed
+            t.changedWhileHeld = held
+            return t
+        }
+        #expect(CaptureAlerts.lastTakeCameraNotes(nil).isEmpty)
+        // A 1.6 take has no counts.
+        #expect(CaptureAlerts.lastTakeCameraNotes(track(checked: nil, repeated: nil, sameBuffer: nil, changed: nil, held: nil)).isEmpty)
+        #expect(CaptureAlerts.lastTakeCameraNotes(track(checked: 30_000, repeated: 1_500)).isEmpty)
+        // Under 10 s of frames: no note, however many repeat.
+        #expect(CaptureAlerts.lastTakeCameraNotes(track(checked: 200, repeated: 90)).isEmpty)
+        let notes = CaptureAlerts.lastTakeCameraNotes(track(checked: 30_000, repeated: 13_200))
+        #expect(notes == ["camera.mov looks choppy: 44% of its frames repeat. Plug the capture card into the Mac "
+            + "or a Thunderbolt port, not a dock's or hub's USB port."])
+        #expect(!notes[0].contains("shutter"))
+        // The same buffer again, mostly: the capture stack, not the camera.
+        #expect(CaptureAlerts.lastTakeCameraNotes(track(checked: 30_000, repeated: 13_200, sameBuffer: 13_000))
+            == ["camera.mov looks choppy: macOS delivered the same camera buffer again in 44% of its frames "
+                + "(the capture stack repeats frames, not the camera)."])
+        // A still picture (a slide through a capture card): long runs, no note.
+        #expect(CaptureAlerts.lastTakeCameraNotes(track(checked: 30_000, repeated: 27_000, shortRun: 40)).isEmpty)
+        let changed = CaptureAlerts.lastTakeCameraNotes(track(checked: 30_000, repeated: 0, changed: 2, held: 1))
+        #expect(changed == ["3 camera frames changed in memory after they arrived, so camera.mov can show a picture twice."])
+        #expect(CaptureAlerts.lastTakeCameraNotes(track(checked: 30_000, repeated: 0, changed: 0, held: 1))
+            == ["1 camera frame changed in memory after it arrived, so camera.mov can show a picture twice."])
+        #expect(CaptureAlerts.lastTakeCameraNotes(track(checked: 30_000, repeated: 13_200, changed: 2)).count == 2)
+    }
 }
 
 @Suite struct MeterTests {

@@ -420,7 +420,7 @@ During a take, the menu shows Stop with the elapsed time, three meters, one stat
 
 **Disk checks before Start:** Start is blocked when the disk holds less than about 10 minutes of recording at the current settings, and it warns under about 60 minutes. Start is also blocked when the recording folder's disk is not connected, or TwinTake cannot write there.
 
-**At Stop**, the menu shows the take ("Saved: …") with **Replay** and **Show in Finder**. "Saved with problems" lists the first errors from session.json.
+**At Stop**, the menu shows the take ("Saved: …") with **Replay** and **Show in Finder**. "Saved with problems" lists the first errors from session.json. A note under it says when camera.mov looks choppy: more than 5% of its frames brought the same picture again, in short runs between new pictures. The note says who repeated them: the camera or the capture card (the same picture in a new buffer), or macOS's capture stack (the same buffer again). A still picture, such as a slide through a capture card, gets no note. A note also says when camera frames changed in memory after they arrived.
 
 ## The session folder
 

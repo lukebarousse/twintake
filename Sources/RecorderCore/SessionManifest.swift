@@ -85,6 +85,34 @@ public struct TrackInfo: Codable, Hashable, Sendable {
     /// arrived at (host clock). They differ when the device stamps a nominal frame interval.
     public var measuredPtsFps: Double?
     public var measuredArrivalFps: Double?
+    /// Camera video (1.7): frames that arrived during the file whose content the repeated-frame
+    /// check read (a flat picture or a format it does not read is not counted).
+    public var framesChecked: Int?
+    /// Camera video (1.7): checked frames that arrived bit-identical to the frame right before
+    /// them: the same picture again.
+    public var repeatedOnArrival: Int?
+    /// Camera video (1.7): checked frames not bit-identical to the frame before, but nearly: at
+    /// most 2% of the samples moved, the rest by under 0.1 step on average. Not in `repeatedOnArrival`.
+    public var nearRepeatOnArrival: Int?
+    /// Camera video (1.7): the most repeated frames in a row (3: one picture came 4 times).
+    public var longestRepeatRun: Int?
+    /// Camera video (1.7): repeats in runs of at most 4 (one picture held for a moment between new
+    /// ones: choppy motion). Longer runs are a still picture.
+    public var shortRunRepeats: Int?
+    /// Camera video (1.7): repeats that came in the same buffer as the frame before: the capture
+    /// stack delivered it again. The others came in new buffers: the camera or the capture card.
+    public var sameBufferRepeats: Int?
+    /// Camera video (1.7): checked frames that arrived in a buffer TwinTake still held. A buffer
+    /// pool never hands out a held buffer, so this points at the capture stack or the driver.
+    public var heldBufferArrivals: Int?
+    /// Camera video (1.7): new frames whose content changed between their arrival and their write.
+    public var changedBeforeWrite: Int?
+    /// Camera video (1.7): written frames whose content changed while TwinTake still held them
+    /// (checked when the next new frame arrived and at the end), while the encoder reads them.
+    public var changedWhileHeld: Int?
+    /// Camera video (1.7): new pictures per checked frame, (checked - repeated) / checked. Missing
+    /// when no frame was checked.
+    public var uniqueFrameRatio: Double?
     /// camera.mov's mic track: which mic the camera recorded with, as the camera mic detector
     /// heard it during the take (`CameraMicDetector`). Added in 1.2.
     public var micSource: MicSourceReport?
@@ -195,7 +223,7 @@ public struct SyncInfo: Codable, Hashable, Sendable {
 /// session.json. Written with status "recording" at start and rewritten at stop.
 /// A file that still says "recording" after the app quit needs recovery.
 public struct SessionManifest: Codable, Sendable {
-    public static let currentSchemaVersion = "1.6"
+    public static let currentSchemaVersion = "1.7"
 
     public enum Status: String, Codable, Sendable {
         case recording

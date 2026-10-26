@@ -777,6 +777,9 @@ public final class CameraRecorder: SessionTrackRecorder, @unchecked Sendable {
                 events.append(.trackStop, data)
             }
             if let warning = CameraTrackReport.rateWarning(timing.video) { events.append(.warning, warning) }
+            if let warning = CameraTrackReport.repeatWarning(timing.video, frameRate: facts.frameRate) {
+                events.append(.warning, warning)
+            }
         }
         // The file has finished and the facts are read: the camera may leave the recording graph.
         // A take with camera trouble (a lost device, a session error, a new signal) keeps it, and

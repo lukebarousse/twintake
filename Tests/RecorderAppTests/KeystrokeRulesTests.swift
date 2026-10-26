@@ -233,8 +233,10 @@ import WindowTools
         #expect(try action(kVK_ANSI_A, [.maskAlphaShift, .maskSecondaryFn], "a") == .none)
     }
 
-    @Test func schemaIsOneSix() {
-        #expect(SessionManifest.currentSchemaVersion == "1.6")
+    /// The keystroke fields came with 1.6; later 1.x versions only add fields.
+    @Test func schemaIsOneSixOrLater() {
+        let parts = SessionManifest.currentSchemaVersion.split(separator: ".").compactMap { Int($0) }
+        #expect(parts.count == 2 && parts[0] == 1 && parts[1] >= 6)
     }
 }
 

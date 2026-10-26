@@ -129,6 +129,22 @@ enum CaptureAlerts {
         if report.cameraMicSilent { return "The camera mic did not pick up your voice for a while." }
         return nil
     }
+
+    /// The notes on the last take's line about camera.mov's pictures (session.json's camera
+    /// video track, 1.7): repeated pictures made it choppy (`RepeatedFrameRule`, the same verdict
+    /// as the take's warning; a still picture gets no note), or frames changed after they arrived.
+    static func lastTakeCameraNotes(_ track: TrackInfo?) -> [String] {
+        guard let track else { return [] }
+        var notes: [String] = []
+        if let note = RepeatedFrameRule.verdict(track).flatMap(RepeatedFrameRule.menuNote) { notes.append(note) }
+        let changed = (track.changedBeforeWrite ?? 0) + (track.changedWhileHeld ?? 0)
+        if changed > 0 {
+            let frames = changed == 1 ? "1 camera frame" : "\(changed) camera frames"
+            notes.append("\(frames) changed in memory after \(changed == 1 ? "it" : "they") arrived, "
+                + "so camera.mov can show a picture twice.")
+        }
+        return notes
+    }
 }
 
 /// One beep when a warning comes on, none while it stays on, and again only after it cleared.

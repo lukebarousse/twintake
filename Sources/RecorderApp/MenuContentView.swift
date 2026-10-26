@@ -640,6 +640,10 @@ private struct LastSessionView: View {
                 Label(note, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             }
+            ForEach(CaptureAlerts.lastTakeCameraNotes(last.cameraVideo), id: \.self) { note in
+                Label(note, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
             ForEach(Array(last.errors.prefix(4).enumerated()), id: \.offset) { _, error in
                 Text("• \(error)").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }

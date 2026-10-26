@@ -487,3 +487,119 @@ extension CameraWriterEndToEndTests {
         #expect(worst < cameraFrame, "worst \(worst) ns")
     }
 }
+
+extension CameraWriterEndToEndTests {
+    /// Feeds a 320x180 take of `frames` frames (from camera frame 48 on) straight into the
+    /// pipeline: `picture(k, previous)` gives frame k of the file (k < 0 before it), and `after(k, frame)`
+    /// runs on the video queue right after frame k went in. Returns the video result and events.jsonl.
+    private func repeatTake(_ name: String, frames: Int64 = 280, picture: (Int64, CVPixelBuffer?) -> CVPixelBuffer,
+                            after: @escaping @Sendable (Int64, CVPixelBuffer) -> Void = { _, _ in })
+        async throws -> (CameraVideoResult, [SessionEvent]) {
+        let dir = try tempDir(name)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        var camera = SimulatedCamera()
+        camera.baseNs = HostClock.nowNs() - 200_000_000_000
+        camera.jitterNs = 1_000_000
+        let now = FakeNow()
+        let controller = CameraWriterController(frameRate: .fps23_976, audioChannels: nil, now: { now.ns })
+        controller.configure(syncClock: nil)
+        let first: Int64 = 48
+        var previous: CVPixelBuffer?
+        func feed(_ range: Range<Int64>) async throws {
+            for n in range {
+                let k = n - first
+                let frame = picture(k, previous)
+                previous = frame
+                let pts = camera.ptsNs(n), arrival = camera.arrivalNs(n)
+                now.set(arrival)
+                let video = controller.video, box = FramesBox(frames: [frame])
+                await controller.videoQueue.run {
+                    video.receive(box.frames[0], ptsNs: pts, arrivalNs: arrival)
+                    if k >= 0 { after(k, box.frames[0]) }
+                }
+                try await Task.sleep(for: .milliseconds(3))
+            }
+        }
+        try await feed(0..<(first - 6))
+        let events = try EventLog(url: dir.appendingPathComponent("events.jsonl"))
+        let url = dir.appendingPathComponent("camera.mov"), startNs = camera.realNs(first) - 10_000_000
+        let start = Task { await controller.start(url: url, events: events, plan: plan(audioChannels: nil), labels: labels,
+                                                  startHostNs: startNs, giveUpAfter: 10) }
+        #expect(await CameraRecorder.waitUntil({ controller.video.isArmed }, atMost: .seconds(5)))
+        try await feed((first - 6)..<(first + frames))
+        #expect(await start.value == .started)
+        let finish = await controller.stop(timeout: 15, stopNs: camera.realNs(first + frames) - 2_000_000)
+        #expect(finish.playable)
+        events.close()
+        let video = try #require(controller.timing().video)
+        #expect(video.stats == CameraGridStats(framesWritten: frames), "\(video.stats)")
+        return (video, try EventLog.read(dir.appendingPathComponent("events.jsonl")))
+    }
+
+    /// Frame k of the pattern seen in camera.mov: 4 new pictures, then the last one 3 more times.
+    private func isRepeat(_ k: Int64) -> Bool { k >= 0 && k % 7 >= 4 }
+    private func newPicture(_ k: Int64) -> CVPixelBuffer {
+        let index = k >= 0 ? 4 * (k / 7) + k % 7 : 1000 + k
+        return noisyFrame(width: 320, height: 180, seed: UInt64(index % 16 + 1))
+    }
+
+    /// The camera sends the pattern, each repeat in a new buffer. The check counts the repeats on
+    /// arrival as the camera's (short runs, new buffers), finds no frame that changed after it
+    /// arrived, logs no repeat warning during the take, and the file gets every frame in its own
+    /// slot as before. The warning at Stop has the totals.
+    @Test func repeatedPicturesAreCountedOnArrival() async throws {
+        let (video, events) = try await repeatTake("camera-repeats") { k, previous in
+            if isRepeat(k), let previous { copyFrame(previous) } else { newPicture(k) }
+        }
+        let check = video.frameCheck
+        #expect(check.checked == 280 && check.repeatedOnArrival == 120 && check.longestRepeatRun == 3, "\(check)")
+        #expect(check.shortRunRepeats == 120 && check.sameBufferRepeats == 0 && check.heldBufferArrivals == 0)
+        #expect(check.changedBeforeWrite == 0 && check.changedWhileHeld == 0)
+        #expect(check.nearRepeatOnArrival == 0 && check.differenceBuckets == [0, 0, 0, 159])
+        #expect(check.uniqueFrameRatio == 160.0 / 280)
+        let checkKeys = ["repeated_on_arrival", "changed_before_write", "changed_while_held"]
+        #expect(!events.contains { e in e.type == .warning && checkKeys.contains { e.data?[$0] != nil } })
+
+        let warning = try #require(CameraTrackReport.repeatWarning(video, frameRate: .fps23_976))
+        #expect(warning["frames_checked"] == "280" && warning["repeated_percent"] == "43")
+        #expect(warning["choppy"] == "true" && warning["cause"] == "camera")
+        #expect(warning["message"]?.hasPrefix("The camera sends the same picture again in 43% of frames") == true)
+    }
+
+    /// The capture stack hands over the same buffer again (the pattern, but each repeat is the
+    /// buffer before it): counted as the stack's, and as arrivals in a buffer TwinTake still held.
+    @Test func aBufferDeliveredAgainIsTheCaptureStacks() async throws {
+        let (video, _) = try await repeatTake("camera-same-buffer") { k, previous in
+            if isRepeat(k), let previous { previous } else { newPicture(k) }
+        }
+        let check = video.frameCheck
+        #expect(check.repeatedOnArrival == 120 && check.sameBufferRepeats == 120 && check.heldBufferArrivals == 120, "\(check)")
+        #expect(check.changedBeforeWrite == 0 && check.changedWhileHeld == 0)
+        let warning = try #require(CameraTrackReport.repeatWarning(video, frameRate: .fps23_976))
+        #expect(warning["cause"] == "capture_stack" && warning["choppy"] == "true")
+        #expect(warning["message"]?.hasPrefix("macOS delivers the same camera buffer again in 43% of frames") == true)
+    }
+
+    /// Something overwrites a frame's buffer after the writer took it, while TwinTake still holds
+    /// it (the encoder reads it later): found when the next frame arrives, and at the end.
+    @Test func aFrameThatChangesWhileHeldIsCounted() async throws {
+        let changed: Set<Int64> = [20, 90, 150, 279]
+        let (video, events) = try await repeatTake("camera-held-change", picture: { k, _ in newPicture(k) }) { k, frame in
+            guard changed.contains(k) else { return }
+            CVPixelBufferLockBaseAddress(frame, [])
+            let luma = CVPixelBufferGetBaseAddressOfPlane(frame, 0)!
+            memset(luma, 99, CVPixelBufferGetBytesPerRowOfPlane(frame, 0) * CVPixelBufferGetHeightOfPlane(frame, 0) / 2)
+            CVPixelBufferUnlockBaseAddress(frame, [])
+        }
+        let check = video.frameCheck
+        // Written right away (the encoder keeps up), so the change comes after the write.
+        #expect(video.writerBusyFrames == 0)
+        #expect(check.changedWhileHeld + check.changedBeforeWrite == 4, "\(check)")
+        #expect(check.changedWhileHeld >= 1)
+        #expect(check.repeatedOnArrival == 0 && check.heldBufferArrivals == 0)
+        let held = events.filter { $0.type == .warning && $0.data?["changed_while_held"] != nil }
+        #expect(held.count == 1)
+        #expect(held.first?.data?["message"] == RepeatedFrameRule.changedWhileHeldWarning)
+        #expect(held.first?.data?["changed_while_held"] == "1")
+    }
+}

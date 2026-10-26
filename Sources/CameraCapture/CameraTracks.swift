@@ -39,6 +39,9 @@ struct CameraTrackFacts: Sendable {
     var slotsSkipped: Int?
     var measuredPtsFps: Double?
     var measuredArrivalFps: Double?
+    /// The repeated-frame check (1.7): frames checked, repeated or nearly repeated on arrival, who
+    /// repeated them, and frames that changed after they arrived.
+    var frameCheck: RepeatedFrameCounter?
     /// Nil when camera.mov has no audio track.
     var audio: Audio?
     /// Which mic the camera recorded with (the camera mic detector), for the mic track.
@@ -61,6 +64,7 @@ extension CameraTrackFacts {
             slotsSkipped = Int(video.stats.slotsSkipped)
             measuredPtsFps = video.ptsFps
             measuredArrivalFps = video.arrivalFps
+            frameCheck = video.frameCheck
         }
         if let audio, let audioDevice, audio.frames > 0 {
             self.audio = Audio(device: audioDevice, sampleRate: Double(WriterSettings.audioSampleRate), channels: audio.channels,
@@ -89,6 +93,18 @@ enum CameraTrackBuilder {
         video.slotsSkipped = f.slotsSkipped
         video.measuredPtsFps = f.measuredPtsFps.map(Self.rounded)
         video.measuredArrivalFps = f.measuredArrivalFps.map(Self.rounded)
+        if let check = f.frameCheck {
+            video.framesChecked = Int(check.checked)
+            video.repeatedOnArrival = Int(check.repeatedOnArrival)
+            video.nearRepeatOnArrival = Int(check.nearRepeatOnArrival)
+            video.longestRepeatRun = Int(check.longestRepeatRun)
+            video.shortRunRepeats = Int(check.shortRunRepeats)
+            video.sameBufferRepeats = Int(check.sameBufferRepeats)
+            video.heldBufferArrivals = Int(check.heldBufferArrivals)
+            video.changedBeforeWrite = Int(check.changedBeforeWrite)
+            video.changedWhileHeld = Int(check.changedWhileHeld)
+            video.uniqueFrameRatio = check.uniqueFrameRatio.map(Self.rounded)
+        }
         guard let a = f.audio else { return [video] }
 
         var mic = TrackInfo(file: f.file, trackIndex: 1, role: .mic, dialogue: false)
@@ -103,12 +119,12 @@ enum CameraTrackBuilder {
         return [video, mic]
     }
 
-    /// Measured rates with 4 decimals (23.9760), enough to see a 0.01% difference.
+    /// Measured rates and ratios with 4 decimals (23.9760), enough to see a 0.01% difference.
     static func rounded(_ fps: Double) -> Double { (fps * 10_000).rounded() / 10_000 }
 }
 
-/// events.jsonl data for camera.mov at Stop: one track_stop per track, and a warning when the
-/// frame timestamps and the real frame arrivals run at different rates.
+/// events.jsonl data for camera.mov at Stop: one track_stop per track, a warning when the frame
+/// timestamps and the real frame arrivals run at different rates, and one when frames repeat.
 enum CameraTrackReport {
     static func fps(_ value: Double) -> String { String(format: "%.4f", value) }
 
@@ -130,6 +146,18 @@ enum CameraTrackReport {
             if v.otherSizeFrames > 0 { data["other_size_frames"] = String(v.otherSizeFrames) }
             data["measured_pts_fps"] = v.ptsFps.map(fps)
             data["measured_arrival_fps"] = v.arrivalFps.map(fps)
+            let check = v.frameCheck
+            data["frames_checked"] = String(check.checked)
+            data["repeated_on_arrival"] = String(check.repeatedOnArrival)
+            data["near_repeat_on_arrival"] = String(check.nearRepeatOnArrival)
+            data["longest_repeat_run"] = String(check.longestRepeatRun)
+            data["short_run_repeats"] = String(check.shortRunRepeats)
+            data["same_buffer_repeats"] = String(check.sameBufferRepeats)
+            data["held_buffer_arrivals"] = String(check.heldBufferArrivals)
+            data["changed_before_write"] = String(check.changedBeforeWrite)
+            data["changed_while_held"] = String(check.changedWhileHeld)
+            data["difference_buckets"] = check.differenceBuckets.map(String.init).joined(separator: ",")
+            data["unique_frame_ratio"] = check.uniqueFrameRatio.map(fps)
             data["clock_correction_ms"] = GridMath.ms(v.correctionNs)
             data["frames_before_start"] = String(v.preStartFrames)
             data["clock"] = v.clockLabel
@@ -156,6 +184,21 @@ enum CameraTrackReport {
             "message": "The camera stamps its frames at \(fps(pts)) fps, but they arrive at \(fps(arrival)) fps "
                 + "(\(percent)% apart). camera.mov follows the arrivals, so its picture stays with its audio.",
             "measured_pts_fps": fps(pts), "measured_arrival_fps": fps(arrival), "difference_percent": percent,
+        ]
+    }
+
+    /// The repeated-frame warning, on the file's totals at Stop (`RepeatedFrameRule.verdict`), so
+    /// it agrees with track_stop, session.json and the menu's note. A burst of repeats early in a
+    /// long take does not warn when the take as a whole is fine.
+    static func repeatWarning(_ video: CameraVideoResult?, frameRate: FrameRate) -> [String: String]? {
+        guard let check = video?.frameCheck, let verdict = check.verdict(frameRate: frameRate) else { return nil }
+        return [
+            "source": "camera", "file": SessionFolder.cameraFileName, "track": TrackInfo.Role.cameraVideo.rawValue,
+            "message": RepeatedFrameRule.warning(verdict),
+            "frames_checked": String(check.checked), "repeated_on_arrival": String(check.repeatedOnArrival),
+            "repeated_percent": String(verdict.percent), "short_run_repeats": String(check.shortRunRepeats),
+            "same_buffer_repeats": String(check.sameBufferRepeats), "choppy": String(verdict.choppy),
+            "cause": verdict.cause.rawValue,
         ]
     }
 }

@@ -26,6 +26,8 @@ struct LastSession: Equatable {
     var errors: [String]
     /// Which mic the camera recorded with (camera.mov's mic track `mic_source`).
     var micSource: MicSourceReport? = nil
+    /// camera.mov's video track, for its repeated-frame counts (1.7).
+    var cameraVideo: TrackInfo? = nil
 }
 
 /// Where the screen half of a session records.
@@ -1555,7 +1557,8 @@ final class SessionCoordinator {
         if [folder.cameraURL, folder.screenURL].contains(where: { FileManager.default.fileExists(atPath: $0.path) }) {
             lastSession = LastSession(folder: folder.url, status: session.manifest.status,
                                       durationS: session.manifest.durationS, errors: session.manifest.errors,
-                                      micSource: session.manifest.tracks.lazy.compactMap(\.micSource).first)
+                                      micSource: session.manifest.tracks.lazy.compactMap(\.micSource).first,
+                                      cameraVideo: session.manifest.tracks.first { $0.role == .cameraVideo })
         } else if cancelled {
             removeCancelledStartFolder(folder)
         }
@@ -1624,7 +1627,8 @@ final class SessionCoordinator {
 
         lastSession = LastSession(folder: session.folder.url, status: session.manifest.status,
                                   durationS: session.manifest.durationS, errors: session.manifest.errors,
-                                  micSource: session.manifest.tracks.lazy.compactMap(\.micSource).first)
+                                  micSource: session.manifest.tracks.lazy.compactMap(\.micSource).first,
+                                  cameraVideo: session.manifest.tracks.first { $0.role == .cameraVideo })
         if let kept { keepAsPreviewCamera(kept) }
         state = saved ? .idle : .error("Could not write session.json in \(session.folder.url.lastPathComponent).")
         Self.log.notice("Stopped: \(session.manifest.status.rawValue, privacy: .public), \(session.manifest.errors.count) error(s)")
